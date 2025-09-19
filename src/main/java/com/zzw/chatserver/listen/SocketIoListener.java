@@ -157,7 +157,7 @@ public class SocketIoListener {
             if (!isFriend) {
                 logger.warn("非好友关系，拒绝发送单聊消息：sender={}, receiver={}",
                         newMessageVo.getSenderId(), newMessageVo.getReceiverId());
-                // 可选：给发送者客户端返回“非好友不能发送消息”的提示
+                // 给发送者客户端返回“非好友不能发送消息”的提示
                 client.sendEvent("sendFailed", "非好友关系，无法发送消息");
                 return; // 直接返回，不执行后续保存和转发
             }
@@ -280,7 +280,6 @@ public class SocketIoListener {
         }
     }
 
-    // 以下其他方法与之前保持一致...
     @OnEvent("sendAgreeFriendValidate")
     public void sendAgreeFriendValidate(SocketIOClient client, ValidateMessageResponseVo validateMessage) {
         logger.info("sendAgreeFriendValidate ---> validateMessage：{}", validateMessage);

@@ -4,18 +4,15 @@ import com.zzw.chatserver.common.ConstValueEnum;
 import com.zzw.chatserver.common.ResultEnum;
 import com.zzw.chatserver.common.UserRoleEnum;
 import com.zzw.chatserver.dao.AccountPoolDao;
-import com.zzw.chatserver.dao.SuperUserDao;
 import com.zzw.chatserver.dao.UserDao;
 import com.zzw.chatserver.pojo.AccountPool;
 import com.zzw.chatserver.pojo.GoodFriend;
-import com.zzw.chatserver.pojo.SuperUser;
 import com.zzw.chatserver.pojo.User;
 import com.zzw.chatserver.pojo.vo.*;
 import com.zzw.chatserver.service.GoodFriendService;
 import com.zzw.chatserver.service.UserService;
 import com.zzw.chatserver.utils.ChatServerUtil;
 import com.zzw.chatserver.utils.DateUtil;
-import org.apache.commons.lang3.StringUtils;
 import org.bson.types.ObjectId;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -90,7 +87,7 @@ public class UserServiceImpl implements UserService {
             return map;
         }
 
-        // 生成用户编码、加密密码等（复用注册逻辑）
+        // 生成用户编码、加密密码等
         AccountPool accountPool = new AccountPool();
         accountPool.setType(ConstValueEnum.USERTYPE);
         accountPool.setStatus(ConstValueEnum.ACCOUNT_USED);
@@ -125,13 +122,12 @@ public class UserServiceImpl implements UserService {
 
     // 新增：判断操作者是否为超级管理员（需根据你的实际逻辑实现）
     private boolean isSuperAdmin(String operatorId) {
-        // 示例逻辑：查询用户角色是否为超级管理员（需根据你的用户表设计调整）
         User operator = userDao.findById(new ObjectId(operatorId)).orElse(null);
         if (operator == null) {
             return false;
         }
-        // 假设超级管理员的角色标识为 "super_admin"（需与你的枚举或常量一致）
-        return "super_admin".equals(operator.getRole());
+        // 假设超级管理员的角色标识为 "admin"
+        return "admin".equals(operator.getRole());
     }
 
     /**
@@ -208,12 +204,12 @@ public class UserServiceImpl implements UserService {
             List<GoodFriend> friendRelations = new ArrayList<>();
             for (User existUser : allUsers) {
                 if (!existUser.getUid().equals(newUser.getUid())) { // 排除自己
-                    // 新增：新客服 -> 现有用户 的好友关系
+                    // 新客服 -> 现有用户 的好友关系
                     GoodFriend friend1 = new GoodFriend();
                     friend1.setUserM(newUser.getUserId());
                     friend1.setUserY(existUser.getUserId());
 
-                    // 新增：现有用户 -> 新客服 的好友关系
+                    // 现有用户 -> 新客服 的好友关系
                     GoodFriend friend2 = new GoodFriend();
                     friend2.setUserM(existUser.getUserId());
                     friend2.setUserY(newUser.getUserId());
