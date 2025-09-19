@@ -126,8 +126,8 @@ public class UserServiceImpl implements UserService {
         if (operator == null) {
             return false;
         }
-        // 假设超级管理员的角色标识为 "admin"
-        return "admin".equals(operator.getRole());
+        // 根据管理员角色信息，超级管理员的role标识为0
+        return "0".equals(operator.getRole());
     }
 
     /**

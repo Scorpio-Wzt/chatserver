@@ -8,6 +8,6 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class Province {
-    private String name = "广东省";
-    private String code = "510000";
+    private String name = "山西省";
+    private String code = "030000";
 }

@@ -6,6 +6,7 @@ import com.corundumstudio.socketio.annotation.OnConnect;
 import com.corundumstudio.socketio.annotation.OnDisconnect;
 import com.corundumstudio.socketio.annotation.OnEvent;
 import com.zzw.chatserver.common.ConstValueEnum;
+import com.zzw.chatserver.common.UserRoleEnum;
 import com.zzw.chatserver.filter.SensitiveFilter;
 import com.zzw.chatserver.pojo.*;
 import com.zzw.chatserver.pojo.vo.*;
@@ -152,16 +153,22 @@ public class SocketIoListener {
 
         // 仅单聊(FRIEND)才进行关键字检测和服务卡片生成
         if (ConstValueEnum.FRIEND.equals(newMessageVo.getConversationType())) {
-            // 【新增：单聊消息发送前，强制验证好友关系】
-            boolean isFriend = goodFriendService.checkIsFriend(newMessageVo.getSenderId(), newMessageVo.getReceiverId());
-            if (!isFriend) {
-                logger.warn("非好友关系，拒绝发送单聊消息：sender={}, receiver={}",
-                        newMessageVo.getSenderId(), newMessageVo.getReceiverId());
-                // 给发送者客户端返回“非好友不能发送消息”的提示
-                client.sendEvent("sendFailed", "非好友关系，无法发送消息");
-                return; // 直接返回，不执行后续保存和转发
-            }
+            // 获取发送者角色
+            User sender = userService.getUserInfo(newMessageVo.getSenderId());
+            boolean isCustomerService = UserRoleEnum.CUSTOMER_SERVICE.getCode().equals(sender.getRole());
 
+            // 单聊消息发送前，强制验证好友关系
+            // 客服直接放行，买家需校验好友关系
+            if (!isCustomerService) {
+                boolean isFriend = goodFriendService.checkIsFriend(newMessageVo.getSenderId(), newMessageVo.getReceiverId());
+                if (!isFriend) {
+                    logger.warn("非好友关系，拒绝发送单聊消息：sender={}, receiver={}",
+                            newMessageVo.getSenderId(), newMessageVo.getReceiverId());
+                    // 给发送者客户端返回“非好友不能发送消息”的提示
+                    client.sendEvent("sendFailed", "非好友关系，无法发送消息");
+                    return; // 直接返回，不执行后续保存和转发
+                }
+            }
             handleCardMessage(newMessageVo);
         } else {
             // 群聊时强制清空卡片相关字段，确保不会有残留
@@ -215,6 +222,37 @@ public class SocketIoListener {
             return;
         }
 
+        // 获取双方角色信息
+        User sender = userService.getUserInfo(newMessageVo.getSenderId());
+        User receiver = userService.getUserInfo(newMessageVo.getReceiverId());
+
+        if (sender == null || receiver == null) {
+            logger.warn("用户信息不存在，无法生成服务卡片：sender={}, receiver={}",
+                    newMessageVo.getSenderId(), newMessageVo.getReceiverId());
+            return;
+        }
+
+        // 假设User类中有getRole()方法返回UserRoleEnum
+        UserRoleEnum senderRole = UserRoleEnum.fromCode(sender.getRole());
+        UserRoleEnum receiverRole = UserRoleEnum.fromCode(receiver.getRole());
+
+        // 处理未知角色情况
+        if (senderRole == null || receiverRole == null) {
+            logger.warn("存在未知角色，不生成服务卡片：senderRole={}, receiverRole={}",
+                    sender.getRole(), receiver.getRole());
+            return;
+        }
+
+        // 验证是否为客服与用户的聊天（一方为客服，另一方为普通用户）
+        boolean isCustomerServiceChat =
+                (senderRole.isCustomerService() && receiverRole.isCustomer()) ||
+                        (senderRole.isCustomer() && receiverRole.isCustomerService());
+
+        if (!isCustomerServiceChat) {
+            logger.info("非客服与用户聊天，不生成服务卡片：senderRole={}, receiverRole={}",
+                    senderRole.getCode(), receiverRole.getCode());
+            return;
+        }
         // 检测关键字
         boolean hasRefund = message.contains("申请退款");
         boolean hasQuery = message.contains("查询订单");

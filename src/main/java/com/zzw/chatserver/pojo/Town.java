@@ -8,6 +8,6 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class Town {
-    private String name = "海珠区";
-    private String code = "510000";
+    private String name = "迎泽区";
+    private String code = "030000";
 }
