@@ -17,7 +17,7 @@ import java.util.*;
 public class User {
     @Id
     private ObjectId userId;
-    private String role = UserRoleEnum.BUYER.getCode(); // 默认买家
+    private String role;// 默认买家
     private String uid; //专门用一个字符串来保存用户的uid，对应 userId
     @Indexed(unique = true)
     private String username; //字段唯一
