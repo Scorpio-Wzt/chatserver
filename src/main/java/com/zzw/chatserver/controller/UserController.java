@@ -2,6 +2,7 @@ package com.zzw.chatserver.controller;
 
 import com.zzw.chatserver.common.R;
 import com.zzw.chatserver.common.ResultEnum;
+import com.zzw.chatserver.common.UserRoleEnum;
 import com.zzw.chatserver.pojo.User;
 import com.zzw.chatserver.pojo.vo.*;
 import com.zzw.chatserver.service.UserService;
@@ -72,10 +73,15 @@ public class UserController {
     }
 
     /**
-     * 买家注册
+     * 用户注册
      */
     @PostMapping("/register")
     public R register(@RequestBody RegisterRequestVo rVo) {
+        // 非管理员不允许注册客服角色
+        // 禁止通过普通注册接口创建客服角色（防止恶意请求，客服需通过管理员接口创建）
+        if (UserRoleEnum.CUSTOMER_SERVICE.getCode().equals(rVo.getRole())) {
+            return R.error().message("客服账号需通过管理员后台创建");
+        }
         Map<String, Object> resMap = userService.register(rVo);
         Integer code = (Integer) resMap.get("code");
         if (code.equals(ResultEnum.REGISTER_SUCCESS.getCode()))

@@ -35,6 +35,12 @@ public interface GoodFriendService {
     void addFriend(GoodFriend goodFriend);
 
     /**
+     * 批量添加好友
+     * @param friends 好友关系实体（包含双方用户ID）
+     */
+    void  batchAddFriends(List<GoodFriend> friends);
+
+    /**
      * 删除好友
      * @param requestVo 删除好友参数（包含主动删除者ID、被动删除者ID、单聊房间ID）
      */

@@ -19,6 +19,15 @@ public interface UserService {
      */
     Map<String, Object> register(RegisterRequestVo rVo);
 
+
+    /**
+     * 注册客服账号（仅超级管理员可调用）
+     * @param rVo 注册请求参数
+     * @param operatorId 操作者ID（超级管理员ID）
+     * @return 注册结果（包含code、msg、userCode、userId等）
+     */
+    Map<String, Object> registerServiceUser(RegisterRequestVo rVo, String operatorId);
+
     /**
      * 新增好友分组
      * @param requestVo 新增分组参数（含用户ID、分组名称）
@@ -114,11 +123,4 @@ public interface UserService {
      */
     void changeUserStatus(String uid, Integer status);
 
-    /**
-     * 客服注册（仅超级管理员可调用）
-     * @param rVo 注册请求参数
-     * @param operatorId 操作人ID（超级管理员ID，用于权限校验）
-     * @return 注册结果Map
-     */
-    Map<String, Object> registerServiceUser(RegisterRequestVo rVo, String operatorId);
 }

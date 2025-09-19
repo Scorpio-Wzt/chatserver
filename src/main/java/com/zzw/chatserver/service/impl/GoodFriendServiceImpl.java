@@ -48,6 +48,7 @@ public class GoodFriendServiceImpl implements GoodFriendService {
     @Resource
     private UserService userService;
 
+
     /**
      * 获取当前用户的好友列表
      * 聚合查询好友关系表与用户表，返回包含好友信息、等级、房间ID的列表
@@ -150,6 +151,12 @@ public class GoodFriendServiceImpl implements GoodFriendService {
             modifyNewUserFenZu(goodFriend.getUserM().toString(), goodFriend.getUserY().toString());
             modifyNewUserFenZu(goodFriend.getUserY().toString(), goodFriend.getUserM().toString());
         }
+    }
+
+    // 批量添加好友（用于批量处理）
+    @Override
+    public void batchAddFriends(List<GoodFriend> friends) {
+        mongoTemplate.insertAll(friends);
     }
 
     /**

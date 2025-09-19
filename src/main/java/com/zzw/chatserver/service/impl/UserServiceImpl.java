@@ -2,13 +2,16 @@ package com.zzw.chatserver.service.impl;
 
 import com.zzw.chatserver.common.ConstValueEnum;
 import com.zzw.chatserver.common.ResultEnum;
+import com.zzw.chatserver.common.UserRoleEnum;
 import com.zzw.chatserver.dao.AccountPoolDao;
 import com.zzw.chatserver.dao.SuperUserDao;
 import com.zzw.chatserver.dao.UserDao;
 import com.zzw.chatserver.pojo.AccountPool;
+import com.zzw.chatserver.pojo.GoodFriend;
 import com.zzw.chatserver.pojo.SuperUser;
 import com.zzw.chatserver.pojo.User;
 import com.zzw.chatserver.pojo.vo.*;
+import com.zzw.chatserver.service.GoodFriendService;
 import com.zzw.chatserver.service.UserService;
 import com.zzw.chatserver.utils.ChatServerUtil;
 import com.zzw.chatserver.utils.DateUtil;
@@ -45,29 +48,28 @@ public class UserServiceImpl implements UserService {
     @Resource
     private BCryptPasswordEncoder bCryptPasswordEncoder;
 
-    @Resource  // 新增：注入超级用户DAO
-    private SuperUserDao superUserDao;
+    @Resource
+    private GoodFriendService goodFriendService;  // 新增这一行
 
-
-    /**
-     * 客服注册逻辑（基于买家注册逻辑扩展，增加权限校验和客服特性）
-     */
     @Override
     public Map<String, Object> registerServiceUser(RegisterRequestVo rVo, String operatorId) {
         Map<String, Object> map = new HashMap<>();
         Integer code = null;
         String msg = null;
         String userCode = null;
+        String userId = null;
 
-        // 校验操作人权限（仅超级管理员可创建客服）
-        SuperUser operator = superUserDao.findById(new ObjectId(operatorId)).orElse(null);
-        if (operator == null) {
+        // 校验操作者是否为超级管理员（需根据你的超级管理员判断逻辑实现）
+        if (!isSuperAdmin(operatorId)) {
             code = ResultEnum.PERMISSION_DENIED.getCode();
             msg = "仅超级管理员可创建客服账号";
             map.put("code", code);
             map.put("msg", msg);
             return map;
         }
+
+        // 强制设置角色为客服（忽略请求中的role参数，防止恶意修改）
+        rVo.setRole(UserRoleEnum.CUSTOMER_SERVICE.getCode());
 
         // 校验两次密码是否一致
         if (!rVo.getRePassword().equals(rVo.getPassword())) {
@@ -88,45 +90,52 @@ public class UserServiceImpl implements UserService {
             return map;
         }
 
-        if (operator.getRole() != 0) {
-            code = ResultEnum.PERMISSION_DENIED.getCode();
-            msg = "仅超级管理员（role=0）可创建客服账号";
-            map.put("code", code);
-            map.put("msg", msg);
-            return map;
-        }
-
-        // 生成用户唯一编码（基于AccountPool）
+        // 生成用户编码、加密密码等（复用注册逻辑）
         AccountPool accountPool = new AccountPool();
-        accountPool.setType(ConstValueEnum.USERTYPE); // 同买家，使用用户类型标识
+        accountPool.setType(ConstValueEnum.USERTYPE);
         accountPool.setStatus(ConstValueEnum.ACCOUNT_USED);
         accountPoolDao.save(accountPool);
 
-        // 加密密码并创建客服实体
         String encryptedPwd = bCryptPasswordEncoder.encode(rVo.getPassword());
-        User serviceUser = new User();
-        serviceUser.setUsername(rVo.getUsername());
-        serviceUser.setPassword(encryptedPwd);
-        serviceUser.setRole("service"); // 核心：标记为客服角色
-        serviceUser.setCode(String.valueOf(accountPool.getCode() + ConstValueEnum.INITIAL_NUMBER)); // 同买家编码规则
-        serviceUser.setPhoto(rVo.getAvatar() != null ? rVo.getAvatar() : "/img/service-default.png"); // 客服默认头像
-        serviceUser.setNickname(rVo.getNickname() != null ? "客服_" + rVo.getNickname() : "客服_" + rVo.getUsername()); // 可自定义昵称，默认带前缀
-        serviceUser.setStatus(0); // 客服默认启用状态
-        userDao.save(serviceUser);
+        User user = new User();
+        user.setUsername(rVo.getUsername());
+        user.setPassword(encryptedPwd);
+        user.setCode(String.valueOf(accountPool.getCode() + ConstValueEnum.INITIAL_NUMBER));
+        user.setPhoto(rVo.getAvatar());
+        user.setNickname(rVo.getNickname() != null ? rVo.getNickname() : ChatServerUtil.randomNickname());
+        user.setSignUpTime(new Date());
+        user.setStatus(0);
+        user.setRole(UserRoleEnum.CUSTOMER_SERVICE.getCode()); // 强制客服角色
 
-        // 封装成功结果
-        userCode = serviceUser.getCode();
+        userDao.save(user);
+
+        // 4. 处理客服的自动好友关系（与所有现有用户关联）
+        handleAutoFriendRelation(user);
+
+        // 5. 返回结果（包含userId，供管理员后续操作）
+        userCode = user.getCode();
         code = ResultEnum.REGISTER_SUCCESS.getCode();
-        msg = "客服账号创建成功";
+        msg = ResultEnum.REGISTER_SUCCESS.getMessage();
         map.put("code", code);
         map.put("msg", msg);
         map.put("userCode", userCode);
-        map.put("userId", serviceUser.getUserId().toString()); // 补充返回用户ID，便于后续操作
+
         return map;
     }
 
+    // 新增：判断操作者是否为超级管理员（需根据你的实际逻辑实现）
+    private boolean isSuperAdmin(String operatorId) {
+        // 示例逻辑：查询用户角色是否为超级管理员（需根据你的用户表设计调整）
+        User operator = userDao.findById(new ObjectId(operatorId)).orElse(null);
+        if (operator == null) {
+            return false;
+        }
+        // 假设超级管理员的角色标识为 "super_admin"（需与你的枚举或常量一致）
+        return "super_admin".equals(operator.getRole());
+    }
+
     /**
-     * 买家注册逻辑
+     * 普通注册逻辑
      */
     @Override
     public Map<String, Object> register(RegisterRequestVo rVo) {
@@ -165,13 +174,19 @@ public class UserServiceImpl implements UserService {
         User user = new User();
         user.setUsername(rVo.getUsername());
         user.setPassword(encryptedPwd);
-        user.setRole("buyer"); // 默认注册为买家
         user.setCode(String.valueOf(accountPool.getCode() + ConstValueEnum.INITIAL_NUMBER));
         user.setPhoto(rVo.getAvatar());
-        user.setNickname(rVo.getNickname() != null ? "用户_" + ChatServerUtil.randomNickname() : "用户_" + rVo.getUsername()); // 生成随机昵称
+        user.setNickname(rVo.getNickname() != null ? rVo.getNickname() : ChatServerUtil.randomNickname()); // 生成随机昵称
+        user.setSignUpTime(new Date());
+        user.setStatus(0); // 正常状态
+        user.setRole(UserRoleEnum.BUYER.getCode());
+
         userDao.save(user);
 
-        // 5. 注册成功，封装结果
+        //处理好友关系自动关联
+        handleAutoFriendRelation(user);
+
+        // 注册成功，封装结果
         userCode = user.getCode();
         code = ResultEnum.REGISTER_SUCCESS.getCode();
         msg = ResultEnum.REGISTER_SUCCESS.getMessage();
@@ -179,6 +194,71 @@ public class UserServiceImpl implements UserService {
         map.put("msg", msg);
         map.put("userCode", userCode);
         return map;
+    }
+
+    /**
+     * 处理用户注册后的自动好友关系：
+     * - 若为客服：自动添加所有现有用户为好友，并让现有用户添加该客服为好友
+     * - 若为买家：自动添加所有现有客服为好友
+     */
+    private void handleAutoFriendRelation(User newUser) {
+        if (UserRoleEnum.CUSTOMER_SERVICE.getCode().equals(newUser.getRole())) {
+            // 客服注册：关联所有现有用户
+            List<User> allUsers = mongoTemplate.findAll(User.class);
+            List<GoodFriend> friendRelations = new ArrayList<>();
+            for (User existUser : allUsers) {
+                if (!existUser.getUid().equals(newUser.getUid())) { // 排除自己
+                    // 新增：新客服 -> 现有用户 的好友关系
+                    GoodFriend friend1 = new GoodFriend();
+                    friend1.setUserM(newUser.getUserId());
+                    friend1.setUserY(existUser.getUserId());
+
+                    // 新增：现有用户 -> 新客服 的好友关系
+                    GoodFriend friend2 = new GoodFriend();
+                    friend2.setUserM(existUser.getUserId());
+                    friend2.setUserY(newUser.getUserId());
+
+                    friendRelations.add(friend1);
+                    friendRelations.add(friend2);
+
+                    // 添加到好友分组（默认"我的好友"）
+                    addToFriendGroup(existUser, newUser.getUid());
+                    addToFriendGroup(newUser, existUser.getUid());
+                }
+            }
+            // 批量添加好友关系（减少数据库交互）
+            if (!friendRelations.isEmpty()) {
+                goodFriendService.batchAddFriends(friendRelations);
+            }
+        } else {
+            // 买家注册：关联所有现有客服
+            List<User> customerServices = mongoTemplate.find(
+                    Query.query(Criteria.where("role").is(UserRoleEnum.CUSTOMER_SERVICE.getCode())),
+                    User.class
+            );
+            List<GoodFriend> friendRelations = new ArrayList<>();
+            for (User cs : customerServices) {
+                // 新增：买家 -> 客服 的好友关系
+                GoodFriend friend1 = new GoodFriend();
+                friend1.setUserM(newUser.getUserId());
+                friend1.setUserY(cs.getUserId());
+
+                // 新增：客服 -> 买家 的好友关系
+                GoodFriend friend2 = new GoodFriend();
+                friend2.setUserM(cs.getUserId());
+                friend2.setUserY(newUser.getUserId());
+
+                friendRelations.add(friend1);
+                friendRelations.add(friend2);
+
+                // 添加到好友分组
+                addToFriendGroup(newUser, cs.getUid());
+                addToFriendGroup(cs, newUser.getUid());
+            }
+            if (!friendRelations.isEmpty()) {
+                goodFriendService.batchAddFriends(friendRelations);
+            }
+        }
     }
 
     /**
@@ -202,6 +282,15 @@ public class UserServiceImpl implements UserService {
             Query query = Query.query(Criteria.where("_id").is(new ObjectId(requestVo.getUserId())));
             mongoTemplate.findAndModify(query, update, User.class);
         }
+    }
+
+    /**
+     * 将好友添加到用户的"我的好友"分组
+     */
+    private void addToFriendGroup(User user, String friendUid) {
+        user.getFriendFenZu().computeIfAbsent("我的好友", k -> new java.util.ArrayList<>())
+                .add(friendUid);
+        mongoTemplate.save(user);
     }
 
     /**
