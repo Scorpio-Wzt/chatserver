@@ -6,6 +6,7 @@ import com.zzw.chatserver.pojo.Group;
 import com.zzw.chatserver.pojo.vo.*;
 import com.zzw.chatserver.service.GroupService;
 import com.zzw.chatserver.service.GroupUserService;
+import io.swagger.annotations.Api;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
@@ -14,6 +15,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/group")
+@Api(tags = "群聊相关接口")
 public class GroupController {
     @Resource
     private GroupUserService groupUserService;

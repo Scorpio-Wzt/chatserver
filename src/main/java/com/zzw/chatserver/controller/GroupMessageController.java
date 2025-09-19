@@ -5,6 +5,7 @@ import com.zzw.chatserver.pojo.vo.GroupHistoryResultVo;
 import com.zzw.chatserver.pojo.vo.GroupMessageResultVo;
 import com.zzw.chatserver.pojo.vo.HistoryMsgRequestVo;
 import com.zzw.chatserver.service.GroupMessageService;
+import io.swagger.annotations.Api;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
@@ -12,6 +13,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/groupMessage")
+@Api(tags = "群消息相关接口")
 public class GroupMessageController {
     @Resource
     private GroupMessageService groupMessageService;

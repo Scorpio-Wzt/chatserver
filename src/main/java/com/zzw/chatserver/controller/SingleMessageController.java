@@ -6,6 +6,7 @@ import com.zzw.chatserver.pojo.vo.IsReadMessageRequestVo;
 import com.zzw.chatserver.pojo.vo.SingleHistoryResultVo;
 import com.zzw.chatserver.pojo.vo.SingleMessageResultVo;
 import com.zzw.chatserver.service.SingleMessageService;
+import io.swagger.annotations.Api;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
@@ -13,6 +14,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/singleMessage")
+@Api(tags = "单聊相关接口")
 public class SingleMessageController {
     @Resource
     private SingleMessageService singleMessageService;

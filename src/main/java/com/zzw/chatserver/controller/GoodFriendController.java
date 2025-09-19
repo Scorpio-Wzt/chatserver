@@ -7,6 +7,7 @@ import com.zzw.chatserver.pojo.vo.MyFriendListResultVo;
 import com.zzw.chatserver.pojo.vo.RecentConversationVo;
 import com.zzw.chatserver.pojo.vo.SingleRecentConversationResultVo;
 import com.zzw.chatserver.service.GoodFriendService;
+import io.swagger.annotations.Api;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
@@ -15,6 +16,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/goodFriend")
+@Api(tags = "好友相关接口")
 public class GoodFriendController {
 
     @Resource

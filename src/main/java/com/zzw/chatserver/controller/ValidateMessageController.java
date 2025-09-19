@@ -4,6 +4,7 @@ import com.zzw.chatserver.common.R;
 import com.zzw.chatserver.pojo.ValidateMessage;
 import com.zzw.chatserver.pojo.vo.ValidateMessageResponseVo;
 import com.zzw.chatserver.service.ValidateMessageService;
+import io.swagger.annotations.Api;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -13,6 +14,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/validate")
+@Api(tags = "验证消息相关接口")
 public class ValidateMessageController {
     @Resource
     private ValidateMessageService validateMessageService;

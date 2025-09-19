@@ -8,6 +8,7 @@ import com.zzw.chatserver.pojo.vo.*;
 import com.zzw.chatserver.service.UserService;
 import com.zzw.chatserver.utils.ChatServerUtil;
 import com.zzw.chatserver.utils.RedisKeyUtil;
+import io.swagger.annotations.Api;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -23,6 +24,7 @@ import java.util.concurrent.TimeUnit;
 @CrossOrigin
 @RestController
 @RequestMapping("/user")
+@Api(tags = "用户相关接口")
 public class UserController {
     @Resource
     private UserService userService;
