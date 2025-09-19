@@ -4,7 +4,7 @@
 
 ## Backend Stack
 
-> `Spring Boot`、`Spring Security`、`Socket.io`、`Redis`、`MongoDB`、`Nginx`、`FastDFS`等。
+> `Spring Boot`、`Spring Security`、`Socket.io`、`Redis`、`MongoDB`、`MinIO`等。
 
 ## Description
 
