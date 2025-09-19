@@ -178,8 +178,10 @@ public class GoodFriendServiceImpl implements GoodFriendService {
     }
 
     /**
-     * 校验两个用户是否为好友关系
-     * 双向校验"发起方-接收方"的好友关系是否存在
+     * 校验两个用户是否可以对话
+     * 规则：
+     * 1. 任意一方是客服（role=service），可以直接对话
+     * 2. 双方都是买家，需要已建立好友关系
      */
     @Override
     public boolean checkIsFriend(String userId, String friendId) {
@@ -188,17 +190,17 @@ public class GoodFriendServiceImpl implements GoodFriendService {
             return false;
         }
 
-        // 查询双方角色
+        // 查询双方用户信息，判断是否有客服角色
         User user = userService.getUserInfo(userId);
         User friend = userService.getUserInfo(friendId);
 
-        // 若任意一方是客服，直接返回true
-        if ("service".equals(user.getRole()) || "service".equals(friend.getRole())) {
+        // 若任意一方是客服，直接判定为可对话（默认是好友）
+        if ((user != null && "service".equals(user.getRole())) ||
+                (friend != null && "service".equals(friend.getRole()))) {
             return true;
         }
 
-        // 买家之间需校验实际好友关系
-        // 转换ID为ObjectId格式，查询好友关系数量
+        // 买家之间需校验实际好友关系（双向校验）
         ObjectId userM = new ObjectId(userId);
         ObjectId userY = new ObjectId(friendId);
         // 校验A->B的关系
@@ -206,12 +208,11 @@ public class GoodFriendServiceImpl implements GoodFriendService {
                 Query.query(Criteria.where("userM").is(userM).and("userY").is(userY)),
                 GoodFriend.class
         );
-        // 校验B->A的关系（防止单向添加的情况）
+        // 校验B->A的关系（防止单向添加）
         long count2 = mongoTemplate.count(
                 Query.query(Criteria.where("userM").is(userY).and("userY").is(userM)),
                 GoodFriend.class
         );
-        // 存在关系则为好友
         return count1 > 0 || count2 > 0;
     }
 
