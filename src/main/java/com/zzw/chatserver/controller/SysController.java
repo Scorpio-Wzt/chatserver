@@ -1,5 +1,7 @@
 package com.zzw.chatserver.controller;
 
+import com.zzw.chatserver.common.ResultEnum;
+import com.zzw.chatserver.pojo.vo.RegisterRequestVo;
 import org.csource.common.MyException;
 import com.zzw.chatserver.common.R;
 import com.zzw.chatserver.filter.SensitiveFilter;
@@ -16,6 +18,7 @@ import com.zzw.chatserver.utils.MinIOUtil;
 import com.zzw.chatserver.utils.SystemUtil;
 import org.apache.commons.io.IOUtils;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -27,6 +30,7 @@ import java.net.URLEncoder;
 import javax.servlet.ServletOutputStream;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/sys")
@@ -52,6 +56,25 @@ public class SysController {
 
     @Resource
     private MinIOUtil minIOUtil;
+
+    /**
+     * 客服注册接口（仅超级管理员可访问）
+     */
+    @PostMapping("/registerService")
+    public R registerServiceUser(@RequestBody RegisterRequestVo rVo) {
+        // 获取当前登录用户（必须是超级管理员）
+        String operatorId = (String) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        Map<String, Object> resMap = userService.registerServiceUser(rVo, operatorId);
+        Integer code = (Integer) resMap.get("code");
+        if (code.equals(ResultEnum.REGISTER_SUCCESS.getCode())) {
+            return R.ok()
+                    .message("客服注册成功")
+                    .data("userCode", resMap.get("userCode"))
+                    .data("userId", resMap.get("userId"));
+        } else {
+            return R.error().code(code).message((String) resMap.get("msg"));
+        }
+    }
 
     /**
      * 获取注册时的头像列表
