@@ -12,4 +12,5 @@ public class RegisterRequestVo {
     private String avatar;
     private String password;
     private String rePassword;
+    private String nickname;
 }

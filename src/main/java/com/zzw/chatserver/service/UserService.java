@@ -113,4 +113,12 @@ public interface UserService {
      * @param status 目标状态（0=正常、1=禁用等，需符合业务定义）
      */
     void changeUserStatus(String uid, Integer status);
+
+    /**
+     * 客服注册（仅超级管理员可调用）
+     * @param rVo 注册请求参数
+     * @param operatorId 操作人ID（超级管理员ID，用于权限校验）
+     * @return 注册结果Map
+     */
+    Map<String, Object> registerServiceUser(RegisterRequestVo rVo, String operatorId);
 }

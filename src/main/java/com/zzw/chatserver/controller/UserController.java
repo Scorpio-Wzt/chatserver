@@ -53,7 +53,26 @@ public class UserController {
     }
 
     /**
-     * 用户注册
+     * 客服注册接口（仅超级管理员可访问）
+     */
+    @PostMapping("/registerService")
+    public R registerServiceUser(@RequestBody RegisterRequestVo rVo) {
+        // 获取当前登录用户（必须是超级管理员）
+        String operatorId = (String) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        Map<String, Object> resMap = userService.registerServiceUser(rVo, operatorId);
+        Integer code = (Integer) resMap.get("code");
+        if (code.equals(ResultEnum.REGISTER_SUCCESS.getCode())) {
+            return R.ok()
+                    .message("客服注册成功")
+                    .data("userCode", resMap.get("userCode"))
+                    .data("userId", resMap.get("userId"));
+        } else {
+            return R.error().code(code).message((String) resMap.get("msg"));
+        }
+    }
+
+    /**
+     * 买家注册
      */
     @PostMapping("/register")
     public R register(@RequestBody RegisterRequestVo rVo) {

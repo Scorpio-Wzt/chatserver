@@ -3,8 +3,10 @@ package com.zzw.chatserver.service.impl;
 import com.zzw.chatserver.common.ConstValueEnum;
 import com.zzw.chatserver.common.ResultEnum;
 import com.zzw.chatserver.dao.AccountPoolDao;
+import com.zzw.chatserver.dao.SuperUserDao;
 import com.zzw.chatserver.dao.UserDao;
 import com.zzw.chatserver.pojo.AccountPool;
+import com.zzw.chatserver.pojo.SuperUser;
 import com.zzw.chatserver.pojo.User;
 import com.zzw.chatserver.pojo.vo.*;
 import com.zzw.chatserver.service.UserService;
@@ -43,8 +45,88 @@ public class UserServiceImpl implements UserService {
     @Resource
     private BCryptPasswordEncoder bCryptPasswordEncoder;
 
+    @Resource  // 新增：注入超级用户DAO
+    private SuperUserDao superUserDao;
+
+
     /**
-     * 用户注册逻辑
+     * 客服注册逻辑（基于买家注册逻辑扩展，增加权限校验和客服特性）
+     */
+    @Override
+    public Map<String, Object> registerServiceUser(RegisterRequestVo rVo, String operatorId) {
+        Map<String, Object> map = new HashMap<>();
+        Integer code = null;
+        String msg = null;
+        String userCode = null;
+
+        // 校验操作人权限（仅超级管理员可创建客服）
+        SuperUser operator = superUserDao.findById(new ObjectId(operatorId)).orElse(null);
+        if (operator == null) {
+            code = ResultEnum.PERMISSION_DENIED.getCode();
+            msg = "仅超级管理员可创建客服账号";
+            map.put("code", code);
+            map.put("msg", msg);
+            return map;
+        }
+
+        // 校验两次密码是否一致
+        if (!rVo.getRePassword().equals(rVo.getPassword())) {
+            code = ResultEnum.INCORRECT_PASSWORD_TWICE.getCode();
+            msg = ResultEnum.INCORRECT_PASSWORD_TWICE.getMessage();
+            map.put("code", code);
+            map.put("msg", msg);
+            return map;
+        }
+
+        // 校验用户名是否已存在
+        User existUser = userDao.findUserByUsername(rVo.getUsername());
+        if (existUser != null) {
+            code = ResultEnum.USER_HAS_EXIST.getCode();
+            msg = ResultEnum.USER_HAS_EXIST.getMessage();
+            map.put("code", code);
+            map.put("msg", msg);
+            return map;
+        }
+
+        if (operator.getRole() != 0) {
+            code = ResultEnum.PERMISSION_DENIED.getCode();
+            msg = "仅超级管理员（role=0）可创建客服账号";
+            map.put("code", code);
+            map.put("msg", msg);
+            return map;
+        }
+
+        // 生成用户唯一编码（基于AccountPool）
+        AccountPool accountPool = new AccountPool();
+        accountPool.setType(ConstValueEnum.USERTYPE); // 同买家，使用用户类型标识
+        accountPool.setStatus(ConstValueEnum.ACCOUNT_USED);
+        accountPoolDao.save(accountPool);
+
+        // 加密密码并创建客服实体
+        String encryptedPwd = bCryptPasswordEncoder.encode(rVo.getPassword());
+        User serviceUser = new User();
+        serviceUser.setUsername(rVo.getUsername());
+        serviceUser.setPassword(encryptedPwd);
+        serviceUser.setRole("service"); // 核心：标记为客服角色
+        serviceUser.setCode(String.valueOf(accountPool.getCode() + ConstValueEnum.INITIAL_NUMBER)); // 同买家编码规则
+        serviceUser.setPhoto(rVo.getAvatar() != null ? rVo.getAvatar() : "/img/service-default.png"); // 客服默认头像
+        serviceUser.setNickname(rVo.getNickname() != null ? "客服_" + rVo.getNickname() : "客服_" + rVo.getUsername()); // 可自定义昵称，默认带前缀
+        serviceUser.setStatus(0); // 客服默认启用状态
+        userDao.save(serviceUser);
+
+        // 封装成功结果
+        userCode = serviceUser.getCode();
+        code = ResultEnum.REGISTER_SUCCESS.getCode();
+        msg = "客服账号创建成功";
+        map.put("code", code);
+        map.put("msg", msg);
+        map.put("userCode", userCode);
+        map.put("userId", serviceUser.getUserId().toString()); // 补充返回用户ID，便于后续操作
+        return map;
+    }
+
+    /**
+     * 买家注册逻辑
      */
     @Override
     public Map<String, Object> register(RegisterRequestVo rVo) {
@@ -83,9 +165,10 @@ public class UserServiceImpl implements UserService {
         User user = new User();
         user.setUsername(rVo.getUsername());
         user.setPassword(encryptedPwd);
+        user.setRole("buyer"); // 默认注册为买家
         user.setCode(String.valueOf(accountPool.getCode() + ConstValueEnum.INITIAL_NUMBER));
         user.setPhoto(rVo.getAvatar());
-        user.setNickname(ChatServerUtil.randomNickname()); // 生成随机昵称
+        user.setNickname(rVo.getNickname() != null ? "用户_" + ChatServerUtil.randomNickname() : "用户_" + rVo.getUsername()); // 生成随机昵称
         userDao.save(user);
 
         // 5. 注册成功，封装结果

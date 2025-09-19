@@ -11,6 +11,7 @@ import com.zzw.chatserver.pojo.vo.RecentConversationVo;
 import com.zzw.chatserver.pojo.vo.SingleRecentConversationResultVo;
 import com.zzw.chatserver.pojo.vo.SimpleUser;
 import com.zzw.chatserver.service.GoodFriendService;
+import com.zzw.chatserver.service.UserService;
 import com.zzw.chatserver.utils.DateUtil;
 import org.bson.types.ObjectId;
 import org.springframework.beans.BeanUtils;
@@ -43,6 +44,9 @@ public class GoodFriendServiceImpl implements GoodFriendService {
 
     @Resource
     private UserDao userDao;
+
+    @Resource
+    private UserService userService;
 
     /**
      * 获取当前用户的好友列表
@@ -184,16 +188,31 @@ public class GoodFriendServiceImpl implements GoodFriendService {
             return false;
         }
 
+        // 查询双方角色
+        User user = userService.getUserInfo(userId);
+        User friend = userService.getUserInfo(friendId);
+
+        // 若任意一方是客服，直接返回true
+        if ("service".equals(user.getRole()) || "service".equals(friend.getRole())) {
+            return true;
+        }
+
+        // 买家之间需校验实际好友关系
         // 转换ID为ObjectId格式，查询好友关系数量
         ObjectId userM = new ObjectId(userId);
         ObjectId userY = new ObjectId(friendId);
-        long count = mongoTemplate.count(
+        // 校验A->B的关系
+        long count1 = mongoTemplate.count(
                 Query.query(Criteria.where("userM").is(userM).and("userY").is(userY)),
                 GoodFriend.class
         );
-
+        // 校验B->A的关系（防止单向添加的情况）
+        long count2 = mongoTemplate.count(
+                Query.query(Criteria.where("userM").is(userY).and("userY").is(userM)),
+                GoodFriend.class
+        );
         // 存在关系则为好友
-        return count > 0;
+        return count1 > 0 || count2 > 0;
     }
 
     // -------------------------- 私有工具方法 --------------------------

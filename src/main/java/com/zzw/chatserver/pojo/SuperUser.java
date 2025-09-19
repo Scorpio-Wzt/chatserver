@@ -15,6 +15,6 @@ public class SuperUser {
     private String account;
     private String password;
     private Integer role; //角色分类：超级管理员0，具有增删改查权限；普通管理员1，只有有查的权限
-    private String nickname = "wzomg-admin";
+    private String nickname = "xiaoqiezi";
     private String avatar = "img/admin-avatar.gif";
 }
