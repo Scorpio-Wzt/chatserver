@@ -121,7 +121,7 @@ public class UserServiceImpl implements UserService {
     }
 
     // 新增：判断操作者是否为超级管理员（需根据你的实际逻辑实现）
-    private boolean isSuperAdmin(String operatorId) {
+    public boolean isSuperAdmin(String operatorId) {
         User operator = userDao.findById(new ObjectId(operatorId)).orElse(null);
         if (operator == null) {
             return false;

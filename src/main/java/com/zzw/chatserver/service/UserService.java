@@ -13,6 +13,13 @@ import java.util.Map;
 public interface UserService {
 
     /**
+     * 管理员身份校验
+     * @param operatorId 校验请求参数（operatorId）
+     * @return 注册结果Boolean
+     */
+    boolean isSuperAdmin(String operatorId);
+
+    /**
      * 用户注册（含账号唯一性校验、密码加密、用户编码生成）
      * @param rVo 注册请求参数（含用户名、密码、头像等）
      * @return 注册结果Map（含状态码、提示信息、用户编码）

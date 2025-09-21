@@ -9,11 +9,9 @@ import com.zzw.chatserver.service.UserService;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
 import java.util.Map;
@@ -21,6 +19,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/superuser")
 @Api(tags = "管理员相关接口")
+@CrossOrigin
 public class SuperUserController {
 
     @Resource
@@ -54,6 +53,11 @@ public class SuperUserController {
     public R registerServiceUser(@RequestBody RegisterRequestVo rVo) {
         // 获取当前登录用户（必须是超级管理员）
         String operatorId = (String) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        boolean isSuperAdmin = userService.isSuperAdmin(operatorId);
+        if (!isSuperAdmin) {
+            return R.error().code(ResultEnum.PERMISSION_DENIED.getCode())
+                    .message("仅超级管理员可注册客服");
+        }
         Map<String, Object> resMap = userService.registerServiceUser(rVo, operatorId);
         Integer code = (Integer) resMap.get("code");
         if (code.equals(ResultEnum.REGISTER_SUCCESS.getCode())) {
