@@ -5,7 +5,7 @@ import lombok.NoArgsConstructor;
 import org.bson.types.ObjectId;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
-import com.zzw.chatserver.pojo.vo.CardOption;
+import com.zzw.chatserver.pojo.vo.CardOptionVo;
 
 import java.util.ArrayList;
 import java.util.Date;
@@ -30,6 +30,7 @@ public class SingleMessage {
     private List<String> isReadUser = new ArrayList<>(); // 值为用户的ID，判断已经读取的用户，在发送消息的时候默认发送发已经读取，在单独会话中Array值只有两个
     // 新增卡片字段（与VO对应）
     private String cardType;
-    private List<CardOption> cardOptions;
+    private List<CardOptionVo> cardOptions;
+    private boolean isOffline; // 新增：是否为离线消息
 }
 

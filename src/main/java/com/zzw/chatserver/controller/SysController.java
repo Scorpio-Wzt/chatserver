@@ -1,7 +1,10 @@
 package com.zzw.chatserver.controller;
 
 import com.zzw.chatserver.common.ResultEnum;
+import com.zzw.chatserver.common.UserRoleEnum;
+import com.zzw.chatserver.pojo.SystemNotification;
 import com.zzw.chatserver.pojo.vo.RegisterRequestVo;
+import com.zzw.chatserver.service.SystemNotificationService;
 import io.swagger.annotations.Api;
 import org.csource.common.MyException;
 import com.zzw.chatserver.common.R;
@@ -58,6 +61,36 @@ public class SysController {
 
     @Resource
     private MinIOUtil minIOUtil;
+
+    @Resource
+    private SystemNotificationService systemNotificationService;
+
+    /**
+     * 系统通知:客服向用户推送【确认收货】等通知，需精准触达指定用户
+     * @param notification
+     * @return
+     */
+    @PostMapping("/sendSystemNotification")
+    public R sendSystemNotification(@RequestBody SystemNotification notification) {
+        // 校验发送者是否为客服（通过UserService判断角色）
+        User sender = userService.getUserInfo(notification.getSenderUid());
+        if (sender == null) {
+            return R.error().message("发送者不存在");
+        }
+        // 校验角色（使用UserRoleEnum的常量，避免硬编码）
+        if (!UserRoleEnum.CUSTOMER_SERVICE.getCode().equals(sender.getRole())) {
+            return R.error().message("无权限发送系统通知");
+        }
+        // 若为“确认收货”类型，自动拼接订单信息到content
+        if ("CONFIRM_RECEIPT".equals(notification.getType())
+                && notification.getOrderNo() != null) {
+            notification.setContent(
+                    String.format("您的订单【%s】已送达，请确认收货", notification.getOrderNo())
+            );
+        }
+        systemNotificationService.sendSystemNotification(notification);
+        return R.ok();
+    }
 
     /**
      * 获取注册时的头像列表

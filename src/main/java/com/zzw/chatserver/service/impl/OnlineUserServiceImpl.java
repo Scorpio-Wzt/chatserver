@@ -27,9 +27,10 @@ public class OnlineUserServiceImpl implements OnlineUserService {
      */
     @Override
     public void addClientIdToSimpleUser(String clientId, SimpleUser simpleUser) {
-        // 1. 绑定客户端ID与用户信息（设置24小时过期时间，避免无效key残留）
+        // 1. 绑定客户端ID与用户信息（调整过期时间为10分钟，足够重连场景，避免无效客户端信息残留）
         String clientKey = RedisKeyUtil.getClientKey(clientId);
-        redisTemplate.opsForValue().set(clientKey, simpleUser, 60 * 60 * 24, TimeUnit.SECONDS);
+//        redisTemplate.opsForValue().set(clientKey, simpleUser, 60 * 60 * 24, TimeUnit.SECONDS);
+        redisTemplate.opsForValue().set(clientKey, simpleUser, 60 * 10, TimeUnit.SECONDS);
 
         // 2. 将用户UID加入在线用户Set集合
         String onlineUidSetKey = RedisKeyUtil.getOnlineUidSetKey();

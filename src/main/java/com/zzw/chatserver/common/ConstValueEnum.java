@@ -20,7 +20,8 @@ public interface ConstValueEnum {
     public static final Integer ORDER_STATUS_PAID = 1; // 已支付
     public static final Integer ORDER_STATUS_REFUNDING = 2; // 退款中
     public static final Integer ORDER_STATUS_REFUNDED = 3; // 已退款
-    public static final Integer ORDER_STATUS_CANCELED = 4; // 已取消
+    public static final Integer ORDER_STATUS_CONFIRMED = 4; // 已确认收货
+    public static final Integer ORDER_STATUS_CANCELED = 5; // 已取消
 
 
     public static final Long INITIAL_NUMBER = 10000000L;//用户code字段初始值

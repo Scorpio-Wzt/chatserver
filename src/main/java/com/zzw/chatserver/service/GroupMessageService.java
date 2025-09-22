@@ -14,6 +14,21 @@ import java.util.List;
 public interface GroupMessageService {
 
     /**
+     * 标记群聊中指定用户的未读消息为已读
+     * @param roomId 群聊房间ID
+     * @param uid 当前用户UID
+     */
+    void userIsReadGroupMessage(String roomId, String uid);
+
+    /**
+     * 查询用户在指定群聊中的未读消息
+     * @param roomId 群聊房间ID
+     * @param uid 当前用户UID
+     * @return 未读消息列表
+     */
+    List<GroupMessageResultVo> getUnreadGroupMessages(String roomId, String uid);
+
+    /**
      * 获取群聊历史消息（支持按类型、关键词、日期筛选，分页查询）
      * @param groupHistoryVo 历史消息查询参数（含房间ID、筛选条件、分页信息）
      * @return 群聊历史消息结果（含消息列表和总条数）

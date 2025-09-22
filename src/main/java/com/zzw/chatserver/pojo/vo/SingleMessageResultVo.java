@@ -1,6 +1,5 @@
 package com.zzw.chatserver.pojo.vo;
 
-import com.zzw.chatserver.pojo.vo.CardOption;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -27,6 +26,6 @@ public class SingleMessageResultVo {
 
     // 卡片字段（与 SingleMessage 对齐）
     private String cardType;
-    private List<CardOption> cardOptions;
+    private List<CardOptionVo> cardOptions;
 
 }

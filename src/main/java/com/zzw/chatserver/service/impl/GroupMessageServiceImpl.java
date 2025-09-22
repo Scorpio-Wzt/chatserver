@@ -10,13 +10,12 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import javax.annotation.Resource;
-import java.util.Calendar;
-import java.util.Date;
-import java.util.GregorianCalendar;
-import java.util.List;
+import java.util.*;
 import java.util.regex.Pattern;
 
 /**
@@ -32,34 +31,68 @@ public class GroupMessageServiceImpl implements GroupMessageService {
     @Resource
     private MongoTemplate mongoTemplate;
 
+    @Override
+    public void userIsReadGroupMessage(String roomId, String uid) {
+        if (roomId == null || uid == null) {
+            return; // 参数不全则不执行更新
+        }
+        Criteria criteria = Criteria.where("roomId").is(roomId)
+                .and("isReadUser").nin(uid);
+
+        Update update = new Update();
+        update.addToSet("isReadUser", uid);
+
+        mongoTemplate.updateMulti(
+                Query.query(criteria),
+                update,
+                GroupMessage.class,
+                "groupmessages"
+        );
+    }
+
+    @Override
+    public List<GroupMessageResultVo> getUnreadGroupMessages(String roomId, String uid) {
+        if (roomId == null || uid == null) {
+            return new ArrayList<>(); // 返回空列表避免null
+        }
+        Criteria criteria = Criteria.where("roomId").is(roomId)
+                .and("isReadUser").nin(uid);
+
+        Query query = Query.query(criteria)
+                .with(Sort.by(Sort.Direction.ASC, "time"));
+
+        return mongoTemplate.find(query, GroupMessageResultVo.class, "groupmessages");
+    }
+
     /**
      * 获取群聊历史消息
      * 支持按消息类型、关键词、日期筛选，结合分页返回结果
      */
     @Override
     public GroupHistoryResultVo getGroupHistoryMessages(HistoryMsgRequestVo groupHistoryVo) {
+        if (groupHistoryVo == null || StringUtils.isEmpty(groupHistoryVo.getRoomId())) {
+            return new GroupHistoryResultVo();
+        }
         // 1. 构建基础查询条件：房间ID匹配
         Criteria cri1 = Criteria.where("roomId").is(groupHistoryVo.getRoomId());
         Criteria cri2 = null;
 
-        // 2. 按查询类型筛选（非"all"时按类型+文件名筛选，"all"时按消息内容+文件名筛选）
+        // 2. 按查询类型筛选
         if (!"all".equals(groupHistoryVo.getType())) {
-            // 非全部类型：匹配消息类型 + 文件名模糊查询（不区分大小写）
             cri1.and("messageType").is(groupHistoryVo.getType())
                     .and("fileRawName").regex(Pattern.compile("^.*" + groupHistoryVo.getQuery() + ".*$", Pattern.CASE_INSENSITIVE));
         } else {
-            // 全部类型：模糊匹配消息内容 或 文件名（不区分大小写）
             cri2 = new Criteria().orOperator(
                     Criteria.where("message").regex(Pattern.compile("^.*" + groupHistoryVo.getQuery() + ".*$", Pattern.CASE_INSENSITIVE)),
                     Criteria.where("fileRawName").regex(Pattern.compile("^.*" + groupHistoryVo.getQuery() + ".*$", Pattern.CASE_INSENSITIVE))
             );
         }
 
-        // 3. 按日期筛选（查询指定日期当天的消息）
+        // 3. 按日期筛选
         if (groupHistoryVo.getDate() != null) {
             Calendar calendar = new GregorianCalendar();
             calendar.setTime(groupHistoryVo.getDate());
-            calendar.add(Calendar.DATE, 1); // 计算次日0点，实现“当天消息”筛选
+            calendar.add(Calendar.DATE, 1);
             Date tomorrow = calendar.getTime();
             cri1.and("time").gte(groupHistoryVo.getDate()).lt(tomorrow);
         }
@@ -67,23 +100,22 @@ public class GroupMessageServiceImpl implements GroupMessageService {
         // 4. 构建最终查询对象
         Query query = new Query();
         if (cri2 != null) {
-            // 多条件组合：基础条件 + 类型/关键词条件（且关系）
             query.addCriteria(new Criteria().andOperator(cri1, cri2));
         } else {
             query.addCriteria(cri1);
         }
 
-        // 5. 统计符合条件的总条数
+        // 5. 统计总条数
         long count = mongoTemplate.count(query, GroupMessageResultVo.class, "groupmessages");
 
-        // 6. 设置分页参数（页码从0开始）
+        // 6. 设置分页参数
         query.skip((long) groupHistoryVo.getPageIndex() * groupHistoryVo.getPageSize())
                 .limit(groupHistoryVo.getPageSize());
 
-        // 7. 执行查询，获取消息列表
+        // 7. 执行查询
         List<GroupMessageResultVo> messageList = mongoTemplate.find(query, GroupMessageResultVo.class, "groupmessages");
 
-        // 8. 封装并返回结果
+        // 8. 封装结果
         return new GroupHistoryResultVo(messageList, count);
     }
 
@@ -93,15 +125,14 @@ public class GroupMessageServiceImpl implements GroupMessageService {
      */
     @Override
     public GroupMessageResultVo getGroupLastMessage(String roomId) {
+        if (roomId == null) {
+            return new GroupMessageResultVo();
+        }
         Query query = Query.query(Criteria.where("roomId").is(roomId))
-                .with(Sort.by(Sort.Direction.DESC, "_id")); // 按ID降序，取最新一条
+                .with(Sort.by(Sort.Direction.DESC, "_id"));
 
         GroupMessageResultVo res = mongoTemplate.findOne(query, GroupMessageResultVo.class, "groupmessages");
-        // 无消息时返回空VO，避免后续空指针
-        if (res == null) {
-            res = new GroupMessageResultVo();
-        }
-        return res;
+        return res != null ? res : new GroupMessageResultVo();
     }
 
     /**
@@ -110,10 +141,14 @@ public class GroupMessageServiceImpl implements GroupMessageService {
      */
     @Override
     public List<GroupMessageResultVo> getRecentGroupMessages(String roomId, Integer pageIndex, Integer pageSize) {
+        if (roomId == null || pageIndex == null || pageSize == null
+                || pageIndex < 0 || pageSize <= 0) {
+            return new ArrayList<>();
+        }
         Query query = Query.query(Criteria.where("roomId").is(roomId))
-                .with(Sort.by(Sort.Direction.DESC, "_id")) // 最新消息在前
-                .skip((long) pageIndex * pageSize) // 分页偏移量
-                .limit(pageSize); // 每页条数
+                .with(Sort.by(Sort.Direction.DESC, "_id"))
+                .skip((long) pageIndex * pageSize)
+                .limit(pageSize);
 
         return mongoTemplate.find(query, GroupMessageResultVo.class, "groupmessages");
     }
@@ -124,6 +159,9 @@ public class GroupMessageServiceImpl implements GroupMessageService {
      */
     @Override
     public void addNewGroupMessage(GroupMessage groupMessage) {
+        if (groupMessage == null) {
+            return; // 避免保存空消息
+        }
         groupMessageDao.save(groupMessage);
     }
 }

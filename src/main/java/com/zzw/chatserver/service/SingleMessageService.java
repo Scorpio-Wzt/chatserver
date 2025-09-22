@@ -10,6 +10,13 @@ import java.util.List;
 public interface SingleMessageService {
 
     /**
+     * 查询用户的单聊未读消息
+     * @param uid 当前用户UID（接收者ID）
+     * @return 未读消息列表
+     */
+    List<SingleMessageResultVo> getUnreadMessages(String uid);
+
+    /**
      * 保存新的单聊消息
      */
     void addNewSingleMessage(SingleMessage singleMessage);

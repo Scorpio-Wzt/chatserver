@@ -26,4 +26,5 @@ public class GroupMessage {
     private String message;// 消息内容
     private String messageType;// 消息的类型：emoji/text/img/file/sys
     private List<String> isReadUser = new ArrayList<>(); // 判断已经读取的用户，在发送消息时默认发送方已读取
+    private boolean isOffline; // 新增：是否为离线消息
 }

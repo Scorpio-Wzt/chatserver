@@ -58,15 +58,12 @@ public class SocketIoListener {
     @Resource
     private SysService sysService;
 
-
-    @OnConnect
-    public void eventOnConnect(SocketIOClient client) {
-        Map<String, List<String>> urlParams = client.getHandshakeData().getUrlParams();
-        logger.info("链接开启，urlParams：{}", urlParams);
-    }
-
     @OnDisconnect
     public void eventOnDisConnect(SocketIOClient client) {
+        if (client == null) {
+            logger.warn("eventOnDisConnect: 客户端为空，跳过处理");
+            return;
+        }
         logger.info("eventOnDisConnect ---> 客户端唯一标识为：{}", client.getSessionId());
         Map<String, List<String>> urlParams = client.getHandshakeData().getUrlParams();
         cleanLoginInfo(client.getSessionId().toString());
@@ -74,7 +71,91 @@ public class SocketIoListener {
         socketIOServer.getBroadcastOperations().sendEvent("onlineUser", onlineUserService.getOnlineUidSet());
     }
 
+    @OnConnect
+    public void eventOnConnect(SocketIOClient client) {
+        if (client == null) {
+            logger.warn("eventOnConnect: 客户端为空，跳过处理");
+            return;
+        }
+        Map<String, List<String>> urlParams = client.getHandshakeData().getUrlParams();
+        // 正确获取URL参数中"uid"的第一个值（处理空指针）
+        String uid = (urlParams != null && urlParams.containsKey("uid") && !urlParams.get("uid").isEmpty())
+                ? urlParams.get("uid").get(0)
+                : null;
+        logger.info("客户端连接/重连，UID: {}", uid);
+
+        // 若为重新连接，恢复用户在线状态和房间信息
+        if (uid != null) {
+            // 1. 恢复客户端与用户的绑定（复用现有方法）
+            User user = userService.getUserInfo(uid);
+            if (user == null) { // 增加用户不存在的校验
+                logger.error("用户不存在，UID: {}", uid);
+                return;
+            }
+            SimpleUser simpleUser = new SimpleUser();
+            BeanUtils.copyProperties(user, simpleUser);
+            onlineUserService.addClientIdToSimpleUser(client.getSessionId().toString(), simpleUser);
+
+            // 2. 重新加入用户之前的房间（需从数据库查询用户参与的会话）
+            List<String> roomIds = getRoomsByUid(uid); // 实现自定义方法
+            if (roomIds != null && !roomIds.isEmpty()) {
+                for (String roomId : roomIds) {
+                    if (roomId != null) {
+                        client.joinRoom(roomId);
+                    }
+                }
+            }
+
+            // 3. 推送重连成功通知
+            client.sendEvent("reconnectSuccess", "重连成功");
+        }
+    }
+
+    /**
+     * 查询用户参与的所有房间ID（单聊+群聊）
+     * @param uid 用户UID
+     * @return 房间ID列表
+     */
+    private List<String> getRoomsByUid(String uid) {
+        List<String> roomIds = new ArrayList<>();
+        if (uid == null) {
+            logger.warn("getRoomsByUid: uid为空，返回空列表");
+            return roomIds;
+        }
+
+        // 1. 查询单聊房间（基于好友关系）
+        List<MyFriendListResultVo> friends = goodFriendService.getMyFriendsList(uid);
+        if (friends != null && !friends.isEmpty()) {
+            for (MyFriendListResultVo friend : friends) {
+                if (friend != null && !StringUtils.isEmpty(friend.getRoomId())) {
+                    roomIds.add(friend.getRoomId());
+                }
+            }
+        }
+
+        // 2. 查询群聊房间（基于用户加入的群组）
+        User user = userService.getUserInfo(uid);
+        if (user != null && !StringUtils.isEmpty(user.getUsername())) {
+            List<MyGroupResultVo> myGroups = groupUserService.getGroupUsersByUserName(user.getUsername());
+            if (myGroups != null && !myGroups.isEmpty()) {
+                for (MyGroupResultVo group : myGroups) {
+                    if (group != null && !StringUtils.isEmpty(group.getGroupId())) {
+                        roomIds.add(group.getGroupId());
+                    }
+                }
+            }
+        } else {
+            logger.warn("getRoomsByUid: 用户信息不存在，无法查询群聊房间，uid={}", uid);
+        }
+
+        return roomIds;
+    }
+
     private void cleanLoginInfo(String clientId) {
+        if (clientId == null) {
+            logger.warn("cleanLoginInfo: clientId为空，跳过处理");
+            return;
+        }
         SimpleUser simpleUser = onlineUserService.getSimpleUserByClientId(clientId);
         if (simpleUser != null) {
             onlineUserService.removeClientAndUidInSet(clientId, simpleUser.getUid());
@@ -90,6 +171,10 @@ public class SocketIoListener {
 
     @OnEvent("goOnline")
     public void goOnline(SocketIOClient client, User user) {
+        if (client == null || user == null || StringUtils.isEmpty(user.getUid())) {
+            logger.warn("goOnline: 客户端或用户信息不完整，跳过处理");
+            return;
+        }
         logger.info("goOnline ---> user：{}", user);
         String clientId = client.getSessionId().toString();
         SimpleUser simpleUser = new SimpleUser();
@@ -98,10 +183,44 @@ public class SocketIoListener {
         onlineUserService.addClientIdToSimpleUser(clientId, simpleUser);
         printMessage();
         socketIOServer.getBroadcastOperations().sendEvent("onlineUser", onlineUserService.getOnlineUidSet());
+
+        // 查询并推送离线消息
+        String uid = user.getUid();
+        logger.info("用户{}上线，开始推送离线消息", uid);
+
+        // 2.1 推送单聊离线消息（接收者为当前用户，且未读）
+        IsReadMessageRequestVo singleUnreadReq = new IsReadMessageRequestVo();
+        singleUnreadReq.setUserId(uid);
+        List<SingleMessageResultVo> singleOfflineMsgs = singleMessageService.getUnreadMessages(uid);
+        if (singleOfflineMsgs != null && !singleOfflineMsgs.isEmpty()) {
+            client.sendEvent("offlineSingleMessages", singleOfflineMsgs);
+            logger.info("推送单聊离线消息{}条给用户{}", singleOfflineMsgs.size(), uid);
+            // 标记为已读（可选：上线后自动标记离线消息为已读）
+            singleMessageService.userIsReadMessage(singleUnreadReq);
+        }
+
+        // 2.2 推送群聊离线消息（用户所在群聊中，未读的消息）
+        List<String> userGroupRooms = getRoomsByUid(uid);
+        if (userGroupRooms != null && !userGroupRooms.isEmpty()) {
+            for (String roomId : userGroupRooms) {
+                if (roomId == null) continue;
+                List<GroupMessageResultVo> groupOfflineMsgs = groupMessageService.getUnreadGroupMessages(roomId, uid);
+                if (groupOfflineMsgs != null && !groupOfflineMsgs.isEmpty()) {
+                    client.sendEvent("offlineGroupMessages_" + roomId, groupOfflineMsgs);
+                    logger.info("推送群聊[{}]离线消息{}条给用户{}", roomId, groupOfflineMsgs.size(), uid);
+                    // 标记为已读（可选）
+                    groupMessageService.userIsReadGroupMessage(roomId, uid);
+                }
+            }
+        }
     }
 
     @OnEvent("leave")
     public void leave(SocketIOClient client) {
+        if (client == null) {
+            logger.warn("leave: 客户端为空，跳过处理");
+            return;
+        }
         logger.info("leave ---> client：{}", client);
         cleanLoginInfo(client.getSessionId().toString());
         socketIOServer.getBroadcastOperations().sendEvent("onlineUser", onlineUserService.getOnlineUidSet());
@@ -109,11 +228,15 @@ public class SocketIoListener {
 
     @OnEvent("isReadMsg")
     public void isReadMsg(SocketIOClient client, UserIsReadMsgRequestVo requestVo) {
+        if (client == null || requestVo == null || StringUtils.isEmpty(requestVo.getRoomId())) {
+            logger.warn("isReadMsg: 客户端或请求参数不完整，跳过处理");
+            return;
+        }
         logger.info("isReadMsg ---> requestVo：{}", requestVo);
-        if (requestVo.getRoomId() != null) {
-            Collection<SocketIOClient> clients = socketIOServer.getRoomOperations(requestVo.getRoomId()).getClients();
+        Collection<SocketIOClient> clients = socketIOServer.getRoomOperations(requestVo.getRoomId()).getClients();
+        if (clients != null) {
             for (SocketIOClient item : clients) {
-                if (item != client) {
+                if (item != null && !item.getSessionId().equals(client.getSessionId())) {
                     item.sendEvent("isReadMsg", requestVo);
                 }
             }
@@ -122,12 +245,22 @@ public class SocketIoListener {
 
     @OnEvent("join")
     public void join(SocketIOClient client, CurrentConversationVo conversationVo) {
+        if (client == null || conversationVo == null || StringUtils.isEmpty(conversationVo.getRoomId())) {
+            logger.warn("join: 客户端或房间信息不完整，跳过处理");
+            return;
+        }
         logger.info("加入房间号码：{} ---> conversationVo：{}", conversationVo.getRoomId(), conversationVo);
         client.joinRoom(conversationVo.getRoomId());
     }
 
     @OnEvent("sendNewMessage")
     public void sendNewMessage(SocketIOClient client, NewMessageVo newMessageVo) {
+        if (client == null || newMessageVo == null
+                || StringUtils.isEmpty(newMessageVo.getSenderId())
+                || StringUtils.isEmpty(newMessageVo.getRoomId())) {
+            logger.warn("sendNewMessage: 客户端或消息参数不完整，跳过处理");
+            return;
+        }
         logger.info("sendNewMessage ---> newMessageVo：{}", newMessageVo);
 
         // 敏感词过滤（所有消息类型都需要）
@@ -155,18 +288,28 @@ public class SocketIoListener {
         if (ConstValueEnum.FRIEND.equals(newMessageVo.getConversationType())) {
             // 获取发送者角色
             User sender = userService.getUserInfo(newMessageVo.getSenderId());
+            if (sender == null) {
+                logger.error("sendNewMessage: 发送者不存在，senderId={}", newMessageVo.getSenderId());
+                client.sendEvent("sendFailed", "发送者信息不存在");
+                return;
+            }
             boolean isCustomerService = UserRoleEnum.CUSTOMER_SERVICE.getCode().equals(sender.getRole());
 
             // 单聊消息发送前，强制验证好友关系
             // 客服直接放行，买家需校验好友关系
             if (!isCustomerService) {
-                boolean isFriend = goodFriendService.checkIsFriend(newMessageVo.getSenderId(), newMessageVo.getReceiverId());
+                String receiverId = newMessageVo.getReceiverId();
+                if (StringUtils.isEmpty(receiverId)) {
+                    logger.error("sendNewMessage: 单聊接收者ID为空");
+                    client.sendEvent("sendFailed", "接收者信息不完整");
+                    return;
+                }
+                boolean isFriend = goodFriendService.checkIsFriend(newMessageVo.getSenderId(), receiverId);
                 if (!isFriend) {
                     logger.warn("非好友关系，拒绝发送单聊消息：sender={}, receiver={}",
-                            newMessageVo.getSenderId(), newMessageVo.getReceiverId());
-                    // 给发送者客户端返回“非好友不能发送消息”的提示
+                            newMessageVo.getSenderId(), receiverId);
                     client.sendEvent("sendFailed", "非好友关系，无法发送消息");
-                    return; // 直接返回，不执行后续保存和转发
+                    return;
                 }
             }
             handleCardMessage(newMessageVo);
@@ -176,6 +319,24 @@ public class SocketIoListener {
             newMessageVo.setCardOptions(null);
         }
 
+        // 判断接收者在线状态（单聊/群聊区分处理）
+        List<String> readUsers = new ArrayList<>();
+        readUsers.add(newMessageVo.getSenderId()); // 发送者默认已读
+
+        if (ConstValueEnum.FRIEND.equals(newMessageVo.getConversationType())) {
+            // 单聊：接收者为明确的receiverId
+            String receiverId = newMessageVo.getReceiverId();
+            if (!StringUtils.isEmpty(receiverId)) {
+                boolean isReceiverOnline = onlineUserService.checkCurUserIsOnline(receiverId);
+                if (isReceiverOnline) {
+                    readUsers.add(receiverId);
+                }
+            } else {
+                logger.warn("sendNewMessage: 单聊消息接收者ID为空，无法判断在线状态");
+            }
+        }
+        newMessageVo.setIsReadUser(readUsers);
+
         // 保存消息到数据库
         if (ConstValueEnum.FRIEND.equals(newMessageVo.getConversationType())) {
             SingleMessage singleMessage = new SingleMessage();
@@ -184,6 +345,7 @@ public class SocketIoListener {
             singleMessage.setCardType(newMessageVo.getCardType());
             singleMessage.setCardOptions(newMessageVo.getCardOptions());
             singleMessage.setTime(new Date());
+            singleMessage.setIsReadUser(newMessageVo.getIsReadUser());
             logger.info("待插入的单聊消息（含卡片）为：{}", singleMessage);
             singleMessageService.addNewSingleMessage(singleMessage);
         } else if (ConstValueEnum.GROUP.equals(newMessageVo.getConversationType())) {
@@ -191,15 +353,17 @@ public class SocketIoListener {
             BeanUtils.copyProperties(newMessageVo, groupMessage);
             groupMessage.setSenderId(new ObjectId(newMessageVo.getSenderId()));
             groupMessage.setTime(new Date());
-            // 群聊消息不保存卡片相关字段
+            groupMessage.setIsReadUser(newMessageVo.getIsReadUser());
             groupMessageService.addNewGroupMessage(groupMessage);
         }
 
         // 转发消息给房间内其他客户端
         Collection<SocketIOClient> clients = socketIOServer.getRoomOperations(newMessageVo.getRoomId()).getClients();
-        for (SocketIOClient item : clients) {
-            if (!item.getSessionId().equals(client.getSessionId())) {
-                item.sendEvent("receiveMessage", newMessageVo);
+        if (clients != null) {
+            for (SocketIOClient item : clients) {
+                if (item != null && !item.getSessionId().equals(client.getSessionId())) {
+                    item.sendEvent("receiveMessage", newMessageVo);
+                }
             }
         }
     }
@@ -209,80 +373,79 @@ public class SocketIoListener {
      * 处理卡片消息生成，仅在单聊场景被调用
      */
     private void handleCardMessage(NewMessageVo newMessageVo) {
+        if (newMessageVo == null) {
+            logger.warn("handleCardMessage: 消息对象为空，跳过处理");
+            return;
+        }
         String message = newMessageVo.getMessage();
         if (StringUtils.isEmpty(message)) {
             return;
         }
 
         // 验证发送者与接收者是否为好友
-        boolean isFriend = goodFriendService.checkIsFriend(newMessageVo.getSenderId(), newMessageVo.getReceiverId());
+        String senderId = newMessageVo.getSenderId();
+        String receiverId = newMessageVo.getReceiverId();
+        if (StringUtils.isEmpty(senderId) || StringUtils.isEmpty(receiverId)) {
+            logger.warn("handleCardMessage: 发送者或接收者ID为空，无法生成卡片");
+            return;
+        }
+        boolean isFriend = goodFriendService.checkIsFriend(senderId, receiverId);
         if (!isFriend) {
-            logger.warn("非好友关系，拒绝生成服务卡片：sender={}, receiver={}",
-                    newMessageVo.getSenderId(), newMessageVo.getReceiverId());
+            logger.warn("非好友关系，拒绝生成服务卡片：sender={}, receiver={}", senderId, receiverId);
             return;
         }
 
         // 获取双方角色信息
-        User sender = userService.getUserInfo(newMessageVo.getSenderId());
-        User receiver = userService.getUserInfo(newMessageVo.getReceiverId());
-
+        User sender = userService.getUserInfo(senderId);
+        User receiver = userService.getUserInfo(receiverId);
         if (sender == null || receiver == null) {
-            logger.warn("用户信息不存在，无法生成服务卡片：sender={}, receiver={}",
-                    newMessageVo.getSenderId(), newMessageVo.getReceiverId());
+            logger.warn("用户信息不存在，无法生成服务卡片：sender={}, receiver={}", senderId, receiverId);
             return;
         }
 
-        // 假设User类中有getRole()方法返回UserRoleEnum
+        // 转换角色枚举
         UserRoleEnum senderRole = UserRoleEnum.fromCode(sender.getRole());
         UserRoleEnum receiverRole = UserRoleEnum.fromCode(receiver.getRole());
-
-        // 处理未知角色情况
         if (senderRole == null || receiverRole == null) {
             logger.warn("存在未知角色，不生成服务卡片：senderRole={}, receiverRole={}",
                     sender.getRole(), receiver.getRole());
             return;
         }
 
-        // 验证是否为客服与用户的聊天（一方为客服，另一方为普通用户）
+        // 验证是否为客服与用户的聊天
         boolean isCustomerServiceChat =
                 (senderRole.isCustomerService() && receiverRole.isCustomer()) ||
                         (senderRole.isCustomer() && receiverRole.isCustomerService());
-
         if (!isCustomerServiceChat) {
             logger.info("非客服与用户聊天，不生成服务卡片：senderRole={}, receiverRole={}",
                     senderRole.getCode(), receiverRole.getCode());
             return;
         }
-        // 检测关键字
+
+        // 检测关键字并生成卡片
         boolean hasRefund = message.contains("申请退款");
         boolean hasQuery = message.contains("查询订单");
-
-        // 生成服务卡片
         if (hasRefund || hasQuery) {
-            newMessageVo.setCardType(ConstValueEnum.MESSAGE_TYPE_CARD); // 使用常量定义，避免硬编码
-            List<CardOption> options = new ArrayList<>();
-
+            newMessageVo.setCardType(ConstValueEnum.MESSAGE_TYPE_CARD);
+            List<CardOptionVo> options = new ArrayList<>();
             if (hasRefund) {
-                options.add(new CardOption(
+                options.add(new CardOptionVo(
                         "申请退款",
-                        "/chat/order/refund?userId=" + newMessageVo.getSenderId() + "&token={token}",
+                        "/chat/order/refund?userId=" + senderId + "&token={token}",
                         "POST"
                 ));
             }
-
             if (hasQuery) {
-                options.add(new CardOption(
+                options.add(new CardOptionVo(
                         "查询订单",
-                        "/chat/order/query?userId=" + newMessageVo.getSenderId() + "&token={token}",
+                        "/chat/order/query?userId=" + senderId + "&token={token}",
                         "GET"
                 ));
             }
-
             newMessageVo.setCardOptions(options);
-            logger.info("生成服务卡片：sender={}, 关键字={}", newMessageVo.getSenderId(),
+            logger.info("生成服务卡片：sender={}, 关键字={}", senderId,
                     hasRefund ? "申请退款" : "查询订单");
         } else {
-            // 无关键字时清空卡片字段
             newMessageVo.setCardType(null);
             newMessageVo.setCardOptions(null);
         }
@@ -290,6 +453,10 @@ public class SocketIoListener {
 
     @OnEvent("sendValidateMessage")
     public void sendValidateMessage(SocketIOClient client, ValidateMessage validateMessage) {
+        if (client == null || validateMessage == null) {
+            logger.warn("sendValidateMessage: 客户端或消息为空，跳过处理");
+            return;
+        }
         logger.info("sendValidateMessage ---> validateMessage：{}", validateMessage);
         String[] res = sensitiveFilter.filter(validateMessage.getAdditionMessage());
         String filterContent = "";
@@ -320,6 +487,10 @@ public class SocketIoListener {
 
     @OnEvent("sendAgreeFriendValidate")
     public void sendAgreeFriendValidate(SocketIOClient client, ValidateMessageResponseVo validateMessage) {
+        if (client == null || validateMessage == null) {
+            logger.warn("sendAgreeFriendValidate: 客户端或消息为空，跳过处理");
+            return;
+        }
         logger.info("sendAgreeFriendValidate ---> validateMessage：{}", validateMessage);
         GoodFriend goodFriend = new GoodFriend();
         goodFriend.setUserM(new ObjectId(validateMessage.getSenderId()));
@@ -343,12 +514,20 @@ public class SocketIoListener {
 
     @OnEvent("sendDisAgreeFriendValidate")
     public void sendDisAgreeFriendValidate(SocketIOClient client, ValidateMessageResponseVo validateMessage) {
+        if (client == null || validateMessage == null) {
+            logger.warn("sendDisAgreeFriendValidate: 客户端或消息为空，跳过处理");
+            return;
+        }
         logger.info("sendDisAgreeFriendValidate ---> validateMessage：{}", validateMessage);
         validateMessageService.changeFriendValidateNewsStatus(validateMessage.getId(), 2);
     }
 
     @OnEvent("sendDelGoodFriend")
     public void sendDelGoodFriend(SocketIOClient client, CurrentConversationVo conversationVo) {
+        if (client == null || conversationVo == null) {
+            logger.warn("sendDelGoodFriend: 客户端或消息为空，跳过处理");
+            return;
+        }
         logger.info("sendDelGoodFriend ---> conversationVo：{}", conversationVo);
         String uid = onlineUserService.getSimpleUserByClientId(client.getSessionId().toString()).getUid();
         conversationVo.setId(uid);
@@ -362,6 +541,10 @@ public class SocketIoListener {
 
     @OnEvent("sendAgreeGroupValidate")
     public void sendAgreeGroupValidate(SocketIOClient client, ValidateMessageResponseVo validateMessage) {
+        if (client == null || validateMessage == null) {
+            logger.warn("sendAgreeGroupValidate: 客户端或消息为空，跳过处理");
+            return;
+        }
         logger.info("sendAgreeGroupValidate ---> validateMessage：{}", validateMessage);
         groupUserService.addNewGroupUser(validateMessage);
         validateMessageService.changeGroupValidateNewsStatus(validateMessage.getId(), 1);
@@ -381,12 +564,20 @@ public class SocketIoListener {
 
     @OnEvent("sendDisAgreeGroupValidate")
     public void sendDisAgreeGroupValidate(SocketIOClient client, ValidateMessageResponseVo validateMessage) {
+        if (client == null || validateMessage == null) {
+            logger.warn("sendDisAgreeGroupValidate: 客户端或消息为空，跳过处理");
+            return;
+        }
         logger.info("sendDisAgreeGroupValidate ---> validateMessage：{}", validateMessage);
         validateMessageService.changeFriendValidateNewsStatus(validateMessage.getId(), 2);
     }
 
     @OnEvent("sendQuitGroup")
     public void sendQuitGroup(SocketIOClient client, CurrentConversationVo conversationVo) {
+        if (client == null || conversationVo == null) {
+            logger.warn("sendQuitGroup: 客户端或消息为空，跳过处理");
+            return;
+        }
         logger.info("sendQuitGroup ---> conversationVo：{}", conversationVo);
         Collection<SocketIOClient> clients = socketIOServer.getRoomOperations(conversationVo.getRoomId()).getClients();
         for (SocketIOClient item : clients) {
@@ -398,6 +589,10 @@ public class SocketIoListener {
 
     @OnEvent("apply")
     public void apply(SocketIOClient client, CurrentConversationVo conversationVo) {
+        if (client == null || conversationVo == null) {
+            logger.warn("apply: 客户端或消息为空，跳过处理");
+            return;
+        }
         logger.info("apply ---> roomId：{}", conversationVo.getRoomId());
         Collection<SocketIOClient> clients = socketIOServer.getRoomOperations(conversationVo.getRoomId()).getClients();
         for (SocketIOClient item : clients) {
@@ -409,6 +604,10 @@ public class SocketIoListener {
 
     @OnEvent("reply")
     public void reply(SocketIOClient client, CurrentConversationVo conversationVo) {
+        if (client == null || conversationVo == null) {
+            logger.warn("reply: 客户端或消息为空，跳过处理");
+            return;
+        }
         logger.info("reply ---> roomId：{}", conversationVo.getRoomId());
         Collection<SocketIOClient> clients = socketIOServer.getRoomOperations(conversationVo.getRoomId()).getClients();
         for (SocketIOClient item : clients) {
@@ -420,6 +619,10 @@ public class SocketIoListener {
 
     @OnEvent("1v1answer")
     public void answer(SocketIOClient client, CurrentConversationVo conversationVo) {
+        if (client == null || conversationVo == null) {
+            logger.warn("1v1answer: 客户端或消息为空，跳过处理");
+            return;
+        }
         logger.info("1v1answer ---> roomId：{}", conversationVo.getRoomId());
         Collection<SocketIOClient> clients = socketIOServer.getRoomOperations(conversationVo.getRoomId()).getClients();
         for (SocketIOClient item : clients) {
@@ -431,6 +634,10 @@ public class SocketIoListener {
 
     @OnEvent("1v1ICE")
     public void ICE(SocketIOClient client, CurrentConversationVo conversationVo) {
+        if (client == null || conversationVo == null) {
+            logger.warn("1v1ICE: 客户端或消息为空，跳过处理");
+            return;
+        }
         logger.info("1v1ICE ---> roomId：{}", conversationVo.getRoomId());
         Collection<SocketIOClient> clients = socketIOServer.getRoomOperations(conversationVo.getRoomId()).getClients();
         for (SocketIOClient item : clients) {
@@ -442,6 +649,10 @@ public class SocketIoListener {
 
     @OnEvent("1v1offer")
     public void offer(SocketIOClient client, CurrentConversationVo conversationVo) {
+        if (client == null || conversationVo == null) {
+            logger.warn("1v1offer: 客户端或消息为空，跳过处理");
+            return;
+        }
         logger.info("1v1offer ---> roomId：{}", conversationVo.getRoomId());
         Collection<SocketIOClient> clients = socketIOServer.getRoomOperations(conversationVo.getRoomId()).getClients();
         for (SocketIOClient item : clients) {
@@ -453,6 +664,10 @@ public class SocketIoListener {
 
     @OnEvent("1v1hangup")
     public void hangup(SocketIOClient client, CurrentConversationVo conversationVo) {
+        if (client == null || conversationVo == null) {
+            logger.warn("1v1hangup: 客户端或消息为空，跳过处理");
+            return;
+        }
         logger.info("1v1hangup ---> roomId：{}", conversationVo.getRoomId());
         Collection<SocketIOClient> clients = socketIOServer.getRoomOperations(conversationVo.getRoomId()).getClients();
         for (SocketIOClient item : clients) {

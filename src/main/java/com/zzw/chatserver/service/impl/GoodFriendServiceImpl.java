@@ -24,10 +24,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import javax.annotation.Resource;
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 /**
  * 好友服务实现类
@@ -131,27 +128,70 @@ public class GoodFriendServiceImpl implements GoodFriendService {
         return resultVoList;
     }
 
+//    /**
+//     * 添加好友
+//     * 校验好友关系是否已存在，不存在则保存，并将双方添加到"我的好友"分组
+//     */
+//    @Override
+//    public void addFriend(GoodFriend goodFriend) {
+//        // 校验好友关系是否已存在
+//        Query query = Query.query(
+//                Criteria.where("userM").is(goodFriend.getUserM())
+//                        .and("userY").is(goodFriend.getUserY())
+//        );
+//        GoodFriend existingFriend = mongoTemplate.findOne(query, GoodFriend.class);
+//
+//        // 不存在则保存，并更新双方分组
+//        if (existingFriend == null) {
+//            goodFriendDao.save(goodFriend);
+//            // 双向添加到"我的好友"分组
+//            modifyNewUserFenZu(goodFriend.getUserM().toString(), goodFriend.getUserY().toString());
+//            modifyNewUserFenZu(goodFriend.getUserY().toString(), goodFriend.getUserM().toString());
+//        }
+//    }
+
     /**
-     * 添加好友
-     * 校验好友关系是否已存在，不存在则保存，并将双方添加到"我的好友"分组
+     * 添加好友（补充双向关系）
+     * 同时创建A→B和B→A两条记录，确保好友关系双向生效
      */
     @Override
     public void addFriend(GoodFriend goodFriend) {
-        // 校验好友关系是否已存在
-        Query query = Query.query(
-                Criteria.where("userM").is(goodFriend.getUserM())
-                        .and("userY").is(goodFriend.getUserY())
-        );
-        GoodFriend existingFriend = mongoTemplate.findOne(query, GoodFriend.class);
+        ObjectId userM = goodFriend.getUserM();
+        ObjectId userY = goodFriend.getUserY();
 
-        // 不存在则保存，并更新双方分组
-        if (existingFriend == null) {
+        // 1. 校验正向（A→B）和反向（B→A）关系是否已存在
+        Query queryForward = Query.query(
+                Criteria.where("userM").is(userM).and("userY").is(userY)
+        );
+        Query queryReverse = Query.query(
+                Criteria.where("userM").is(userY).and("userY").is(userM)
+        );
+
+        GoodFriend existingForward = mongoTemplate.findOne(queryForward, GoodFriend.class);
+        GoodFriend existingReverse = mongoTemplate.findOne(queryReverse, GoodFriend.class);
+
+        // 2. 若双向关系都不存在，则创建并保存
+        if (existingForward == null && existingReverse == null) {
+            // 2.1 保存正向关系（A→B）
+            goodFriend.setCreateDate(new Date()); // 补充创建时间（如果需要）
             goodFriendDao.save(goodFriend);
-            // 双向添加到"我的好友"分组
-            modifyNewUserFenZu(goodFriend.getUserM().toString(), goodFriend.getUserY().toString());
-            modifyNewUserFenZu(goodFriend.getUserY().toString(), goodFriend.getUserM().toString());
+
+            // 2.2 创建并保存反向关系（B→A）
+            GoodFriend reverseFriend = new GoodFriend();
+            reverseFriend.setUserM(userY);       // 原接收方变为发起方
+            reverseFriend.setUserY(userM);       // 原发起方变为接收方
+            reverseFriend.setCreateDate(new Date()); // 与正向关系同时间
+            // 若有其他属性（如备注、分组），也需要同步设置
+            // reverseFriend.setRemark(goodFriend.getRemark());
+
+            goodFriendDao.save(reverseFriend);
+
+            // 3. 双向添加到"我的好友"分组
+            modifyNewUserFenZu(userM.toString(), userY.toString());
+            modifyNewUserFenZu(userY.toString(), userM.toString());
         }
     }
+
 
     // 批量添加好友（用于批量处理）
     @Override

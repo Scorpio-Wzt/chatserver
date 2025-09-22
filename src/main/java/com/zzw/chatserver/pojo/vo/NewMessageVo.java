@@ -26,5 +26,5 @@ public class NewMessageVo {
     private String conversationType;
     // 新增字段
     private String cardType; // 卡片类型：如"serviceCard"标识服务卡片
-    private List<CardOption> cardOptions; // 卡片中的操作选项
+    private List<CardOptionVo> cardOptions; // 卡片中的操作选项
 }

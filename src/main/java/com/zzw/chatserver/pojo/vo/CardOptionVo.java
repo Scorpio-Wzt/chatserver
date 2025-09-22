@@ -10,7 +10,7 @@ import lombok.NoArgsConstructor;
 @Data
 @AllArgsConstructor
 @NoArgsConstructor // 确保反序列化正常
-public class CardOption {
+public class CardOptionVo {
     // 显示文本（如"申请退款"）
     private String text;
     // 后端接口路径（如"/order/refund"）

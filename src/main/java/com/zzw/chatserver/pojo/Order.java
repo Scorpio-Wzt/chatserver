@@ -10,7 +10,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
 import java.util.Date;
 
 /**
- * 订单实体类
+ * 订单实体类（绑定用户与客服）
  */
 @Data
 @NoArgsConstructor
@@ -19,11 +19,14 @@ public class Order {
     @Id
     private ObjectId id;             // MongoDB自动生成的ID
 
-    @Indexed(unique = true) // 自动创建orderNo的唯一索引
+    @Indexed(unique = true) // 订单编号唯一索引
     private String orderNo; // 订单编号（唯一）
 
-    @Indexed // 自动创建userId的普通索引
-    private String userId;           // 关联的用户ID
+    @Indexed // 用户ID索引（加速用户维度查询）
+    private String userId;           // 购买用户ID
+
+    @Indexed // 客服ID索引（加速客服维度查询）
+    private String customerId;       // 关联客服ID（必传，非空）
 
     private String productName;      // 商品名称
 
@@ -36,4 +39,6 @@ public class Order {
     private Date payTime;            // 支付时间
 
     private Date refundTime;         // 退款时间
+
+    private Date confirmTime;        // 确认收货时间
 }

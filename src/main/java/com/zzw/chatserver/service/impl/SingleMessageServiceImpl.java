@@ -12,40 +12,60 @@ import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
+
 import javax.annotation.Resource;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
 @Service
 public class SingleMessageServiceImpl implements SingleMessageService {
 
-    // 在实现类中注入MongoTemplate，避免接口注入的初始化问题
     @Resource
     private MongoTemplate mongoTemplate;
 
     @Override
+    public List<SingleMessageResultVo> getUnreadMessages(String uid) {
+        if (uid == null) {
+            return new ArrayList<>(); // 避免返回null，返回空列表
+        }
+        // 条件：接收者为当前用户，且未读（isReadUser不包含当前用户UID）
+        Criteria criteria = Criteria.where("receiverId").is(uid)
+                .and("isReadUser").nin(uid);
+
+        Query query = Query.query(criteria)
+                .with(Sort.by(Sort.Direction.ASC, "time"));
+
+        return mongoTemplate.find(query, SingleMessageResultVo.class, "singlemessages");
+    }
+
+    @Override
     public void addNewSingleMessage(SingleMessage singleMessage) {
-        // 明确指定集合名，与测试代码和数据库保持一致
+        if (singleMessage == null) {
+            return; // 避免保存空消息
+        }
         mongoTemplate.insert(singleMessage, "singlemessages");
     }
 
     @Override
     public SingleMessageResultVo getLastMessage(String roomId) {
-        // 按_id降序查询最新消息
+        if (roomId == null) {
+            return new SingleMessageResultVo(); // 返回空VO
+        }
         Query query = Query.query(Criteria.where("roomId").is(roomId))
                 .with(Sort.by(Sort.Direction.DESC, "_id"))
                 .limit(1);
 
         SingleMessage message = mongoTemplate.findOne(query, SingleMessage.class, "singlemessages");
-        if (message == null) {
-            return new SingleMessageResultVo(); // 返回空对象避免NPE
-        }
-
-        return convertToVo(message);
+        return message != null ? convertToVo(message) : new SingleMessageResultVo();
     }
 
     @Override
     public List<SingleMessageResultVo> getRecentMessage(String roomId, int pageIndex, int pageSize) {
+        if (roomId == null || pageIndex < 0 || pageSize <= 0) {
+            return new ArrayList<>();
+        }
         Query query = Query.query(Criteria.where("roomId").is(roomId))
                 .with(Sort.by(Sort.Direction.DESC, "_id"))
                 .skip((long) pageIndex * pageSize)
@@ -57,6 +77,9 @@ public class SingleMessageServiceImpl implements SingleMessageService {
 
     @Override
     public SingleHistoryResultVo getSingleHistoryMsg(HistoryMsgRequestVo requestVo) {
+        if (requestVo == null || StringUtils.isEmpty(requestVo.getRoomId())) {
+            return new SingleHistoryResultVo();
+        }
         Criteria criteria = Criteria.where("roomId").is(requestVo.getRoomId());
 
         // 搜索词模糊匹配
@@ -80,6 +103,9 @@ public class SingleMessageServiceImpl implements SingleMessageService {
 
     @Override
     public void userIsReadMessage(IsReadMessageRequestVo requestVo) {
+        if (requestVo == null || StringUtils.isEmpty(requestVo.getUserId()) || StringUtils.isEmpty(requestVo.getRoomId())) {
+            return; // 参数不全则不执行更新
+        }
         Criteria criteria = Criteria.where("roomId").is(requestVo.getRoomId())
                 .and("receiverId").is(requestVo.getUserId())
                 .and("isReadUser").nin(requestVo.getUserId());
@@ -95,15 +121,15 @@ public class SingleMessageServiceImpl implements SingleMessageService {
         );
     }
 
-    /**
-     * 工具方法：将SingleMessage实体转换为SingleMessageResultVo
-     */
     private SingleMessageResultVo convertToVo(SingleMessage message) {
+        if (message == null) {
+            return new SingleMessageResultVo();
+        }
         SingleMessageResultVo vo = new SingleMessageResultVo();
         vo.setId(message.getId().toString());
         vo.setRoomId(message.getRoomId());
         vo.setSenderId(message.getSenderId().toString());
-        vo.setReceiverId(message.getReceiverId()); // 设置接收者ID（依赖VO新增的字段）
+        vo.setReceiverId(message.getReceiverId());
         vo.setSenderName(message.getSenderName());
         vo.setSenderNickname(message.getSenderNickname());
         vo.setSenderAvatar(message.getSenderAvatar());
@@ -117,4 +143,3 @@ public class SingleMessageServiceImpl implements SingleMessageService {
         return vo;
     }
 }
-    
