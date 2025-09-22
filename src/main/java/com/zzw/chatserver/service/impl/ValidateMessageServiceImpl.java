@@ -7,7 +7,10 @@ import com.zzw.chatserver.pojo.vo.SimpleGroup;
 import com.zzw.chatserver.pojo.vo.ValidateMessageResponseVo;
 import com.zzw.chatserver.pojo.vo.ValidateMessageResultVo;
 import com.zzw.chatserver.service.ValidateMessageService;
+import com.zzw.chatserver.utils.ValidationUtil;
 import org.bson.types.ObjectId;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.BeanUtils;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.aggregation.Aggregation;
@@ -26,6 +29,9 @@ import java.util.List;
  */
 @Service
 public class ValidateMessageServiceImpl implements ValidateMessageService {
+
+    // 新增：定义Logger实例
+    private static final Logger logger = LoggerFactory.getLogger(ValidateMessageServiceImpl.class);
 
     @Resource
     private ValidateMessageDao validateMessageDao;
@@ -98,6 +104,12 @@ public class ValidateMessageServiceImpl implements ValidateMessageService {
      */
     @Override
     public ValidateMessage findValidateMessage(String roomId, Integer status, Integer validateType) {
+        // 校验房间ID格式
+        if (!ValidationUtil.isValidRoomId(roomId)) {
+            logger.error("查询验证消息失败：房间ID格式非法，roomId={}", roomId);
+            return null; // 或抛出异常，根据业务需求处理
+        }
+
         // 委托DAO层按复合条件查询（房间ID、状态、类型）
         return validateMessageDao.findValidateMessageByRoomIdAndStatusAndValidateType(roomId, status, validateType);
     }

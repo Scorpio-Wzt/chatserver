@@ -13,7 +13,10 @@ import com.zzw.chatserver.pojo.vo.SimpleUser;
 import com.zzw.chatserver.service.GoodFriendService;
 import com.zzw.chatserver.service.UserService;
 import com.zzw.chatserver.utils.DateUtil;
+import com.zzw.chatserver.utils.ValidationUtil;
 import org.bson.types.ObjectId;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.BeanUtils;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.aggregation.Aggregation;
@@ -32,6 +35,9 @@ import java.util.*;
  */
 @Service
 public class GoodFriendServiceImpl implements GoodFriendService {
+
+    // 定义Logger实例
+    private static final Logger logger = LoggerFactory.getLogger(GoodFriendServiceImpl.class);
 
     @Resource
     private GoodFriendDao goodFriendDao;
@@ -159,6 +165,13 @@ public class GoodFriendServiceImpl implements GoodFriendService {
         ObjectId userM = goodFriend.getUserM();
         ObjectId userY = goodFriend.getUserY();
 
+        // 校验用户ID格式（转换为字符串后校验）
+        if (!ValidationUtil.isValidObjectId(userM.toString())
+                || !ValidationUtil.isValidObjectId(userY.toString())) {
+            logger.error("添加好友失败：用户ID格式非法，userM={}, userY={}", userM, userY);
+            throw new IllegalArgumentException("用户ID格式错误");
+        }
+
         // 1. 校验正向（A→B）和反向（B→A）关系是否已存在
         Query queryForward = Query.query(
                 Criteria.where("userM").is(userM).and("userY").is(userY)
@@ -205,6 +218,18 @@ public class GoodFriendServiceImpl implements GoodFriendService {
      */
     @Override
     public void deleteFriend(DelGoodFriendRequestVo requestVo) {
+        String userM = requestVo.getUserM();
+        String userY = requestVo.getUserY();
+        String roomId = requestVo.getRoomId();
+        // 校验用户ID和房间ID格式
+        if (!ValidationUtil.isValidObjectId(userM) || !ValidationUtil.isValidObjectId(userY)) {
+            logger.error("删除好友失败：用户ID格式非法，userM={}, userY={}", userM, userY);
+            throw new IllegalArgumentException("用户ID格式错误");
+        }
+        if (!ValidationUtil.isValidSingleRoomId(roomId)) {
+            logger.error("删除好友失败：单聊房间ID格式非法，roomId={}", roomId);
+            throw new IllegalArgumentException("单聊房间ID格式错误");
+        }
         // 构建双向删除条件（主动删除者与被动删除者的双向关系）
         Criteria criteriaA = Criteria.where("userY").is(new ObjectId(requestVo.getUserM()))
                 .and("userM").is(new ObjectId(requestVo.getUserY()));
@@ -232,6 +257,12 @@ public class GoodFriendServiceImpl implements GoodFriendService {
      */
     @Override
     public boolean checkIsFriend(String userId, String friendId) {
+        // 1. 参数格式校验
+        if (!ValidationUtil.isValidObjectId(userId) || !ValidationUtil.isValidObjectId(friendId)) {
+            logger.error("好友关系校验失败：用户ID格式非法，userId={}, friendId={}", userId, friendId);
+            return false;
+        }
+
         // 参数为空直接返回非好友
         if (StringUtils.isEmpty(userId) || StringUtils.isEmpty(friendId)) {
             return false;

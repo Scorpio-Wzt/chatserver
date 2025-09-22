@@ -12,13 +12,17 @@ import com.zzw.chatserver.pojo.*;
 import com.zzw.chatserver.pojo.vo.*;
 import com.zzw.chatserver.service.*;
 import com.zzw.chatserver.utils.DateUtil;
+import com.zzw.chatserver.utils.RSAUtil;
+import com.zzw.chatserver.utils.ValidationUtil;
 import org.bson.types.ObjectId;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.BeanUtils;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import org.springframework.web.util.HtmlUtils;
 
 import javax.annotation.Resource;
 import java.util.*;
@@ -180,6 +184,14 @@ public class SocketIoListener {
         SimpleUser simpleUser = new SimpleUser();
         BeanUtils.copyProperties(user, simpleUser);
 
+        // 优化：重连时先清理旧的客户端绑定（避免残留）
+        String oldClientId = onlineUserService.getClientIdByUid(simpleUser.getUid());
+        if (oldClientId != null && !oldClientId.equals(clientId)) {
+            onlineUserService.removeClientAndUidInSet(oldClientId, simpleUser.getUid());
+            logger.info("清理用户[{}]的旧客户端绑定：{}", simpleUser.getUid(), oldClientId);
+        }
+
+        // 建立新的绑定关系
         onlineUserService.addClientIdToSimpleUser(clientId, simpleUser);
         printMessage();
         socketIOServer.getBroadcastOperations().sendEvent("onlineUser", onlineUserService.getOnlineUidSet());
@@ -215,6 +227,22 @@ public class SocketIoListener {
         }
     }
 
+    /**
+     * 处理客户端心跳，延长绑定关系过期时间
+     */
+    @OnEvent("heartbeat")
+    public void handleHeartbeat(SocketIOClient client) {
+        String clientId = client.getSessionId().toString();
+        SimpleUser user = onlineUserService.getSimpleUserByClientId(clientId);
+        if (user != null) {
+            // 延长过期时间（续期1小时）
+            onlineUserService.renewExpiration(clientId, user.getUid());
+            logger.debug("客户端[{}]心跳续期成功，用户：{}", clientId, user.getUid());
+        } else {
+            logger.warn("客户端[{}]心跳验证失败：未找到绑定用户", clientId);
+        }
+    }
+
     @OnEvent("leave")
     public void leave(SocketIOClient client) {
         if (client == null) {
@@ -228,6 +256,14 @@ public class SocketIoListener {
 
     @OnEvent("isReadMsg")
     public void isReadMsg(SocketIOClient client, UserIsReadMsgRequestVo requestVo) {
+        logger.info("isReadMsg ---> requestVo：{}", requestVo);
+        String roomId = requestVo.getRoomId();
+        // 校验房间ID格式
+        if (!ValidationUtil.isValidRoomId(roomId)) {
+            logger.error("消息已读标记失败：房间ID格式非法，roomId={}", roomId);
+            return;
+        }
+
         if (client == null || requestVo == null || StringUtils.isEmpty(requestVo.getRoomId())) {
             logger.warn("isReadMsg: 客户端或请求参数不完整，跳过处理");
             return;
@@ -245,26 +281,115 @@ public class SocketIoListener {
 
     @OnEvent("join")
     public void join(SocketIOClient client, CurrentConversationVo conversationVo) {
-        if (client == null || conversationVo == null || StringUtils.isEmpty(conversationVo.getRoomId())) {
-            logger.warn("join: 客户端或房间信息不完整，跳过处理");
+        String roomId = conversationVo.getRoomId();
+        // 校验房间ID格式
+        if (!ValidationUtil.isValidRoomId(roomId)) {
+            logger.error("加入房间失败：房间ID格式非法，roomId={}", roomId);
+            client.sendEvent("joinFailed", "房间ID格式错误");
             return;
         }
-        logger.info("加入房间号码：{} ---> conversationVo：{}", conversationVo.getRoomId(), conversationVo);
-        client.joinRoom(conversationVo.getRoomId());
+        logger.info("加入房间号码：{} ---> conversationVo：{}", roomId, conversationVo);
+        client.joinRoom(roomId);
     }
 
     @OnEvent("sendNewMessage")
     public void sendNewMessage(SocketIOClient client, NewMessageVo newMessageVo) {
+
+        // 从SecurityContext获取当前登录用户ID（JWT解析的真实身份）
+        String actualUserId = SecurityContextHolder.getContext().getAuthentication().getName();
+        if (!actualUserId.equals(newMessageVo.getSenderId())) {
+            client.sendEvent("sendFailed", "身份验证失败");
+            logger.warn("会话劫持风险：{} 尝试伪造发送者 {}", actualUserId, newMessageVo.getSenderId());
+            return;
+        }
+
         if (client == null || newMessageVo == null
                 || StringUtils.isEmpty(newMessageVo.getSenderId())
                 || StringUtils.isEmpty(newMessageVo.getRoomId())) {
             logger.warn("sendNewMessage: 客户端或消息参数不完整，跳过处理");
             return;
         }
+
         logger.info("sendNewMessage ---> newMessageVo：{}", newMessageVo);
 
+//        // 1. 验证签名相关字段是否存在
+//        if (newMessageVo.getTimestamp() == null || StringUtils.isEmpty(newMessageVo.getSignature())) {
+//            client.sendEvent("sendFailed", "消息缺少签名信息");
+//            return;
+//        }
+
+//        // 2. 验证时间戳有效性（5分钟内有效，防重放）
+//        long now = System.currentTimeMillis();
+//        long timeDiff = now - newMessageVo.getTimestamp();
+//        if (timeDiff < 0 || timeDiff > 5 * 60 * 1000) { // 允许1秒误差，防止时钟偏差
+//            client.sendEvent("sendFailed", "消息已过期（5分钟内有效）");
+//            logger.warn("消息时间戳无效：sender={}, timestamp={}, now={}",
+//                    newMessageVo.getSenderId(), newMessageVo.getTimestamp(), now);
+//            return;
+//        }
+
+//        // 3. 验证消息签名
+//        try {
+//            // 3.1 构建待签名内容（消息核心字段+时间戳，防止篡改）
+//            String content = buildSignContent(newMessageVo);
+//
+//            // 3.2 获取发送者公钥（从用户信息中获取）
+//            User sender = userService.getUserInfo(newMessageVo.getSenderId());
+//            if (sender == null || StringUtils.isEmpty(sender.getPublicKey())) {
+//                client.sendEvent("sendFailed", "发送者公钥不存在");
+//                return;
+//            }
+//
+//            // 3.3 验证签名
+//            boolean signValid = RSAUtil.verify(content, sender.getPublicKey(), newMessageVo.getSignature());
+//            if (!signValid) {
+//                client.sendEvent("sendFailed", "消息签名验证失败（可能被篡改）");
+//                logger.warn("消息签名验证失败：sender={}, content={}", newMessageVo.getSenderId(), content);
+//                return;
+//            }
+//        } catch (Exception e) {
+//            client.sendEvent("sendFailed", "签名验证异常：" + e.getMessage());
+//            logger.error("签名验证异常", e);
+//            return;
+//        }
+
+        // 1. 关键参数格式校验
+        String senderId = newMessageVo.getSenderId();
+        String roomId = newMessageVo.getRoomId();
+        String receiverId = newMessageVo.getReceiverId();
+
+        // 校验发送者ID（用户ID）
+        if (!ValidationUtil.isValidObjectId(senderId)) {
+            logger.error("发送消息失败：发送者ID格式非法，senderId={}", senderId);
+            client.sendEvent("sendFailed", "发送者ID格式错误");
+            return;
+        }
+
+        // 校验房间ID
+        if (!ValidationUtil.isValidRoomId(roomId)) {
+            logger.error("发送消息失败：房间ID格式非法，roomId={}", roomId);
+            client.sendEvent("sendFailed", "房间ID格式错误");
+            return;
+        }
+
+        // 单聊场景校验接收者ID
+        if (ConstValueEnum.FRIEND.equals(newMessageVo.getConversationType())
+                && !ValidationUtil.isValidObjectId(receiverId)) {
+            logger.error("发送消息失败：接收者ID格式非法，receiverId={}", receiverId);
+            client.sendEvent("sendFailed", "接收者ID格式错误");
+            return;
+        }
+
         // 敏感词过滤（所有消息类型都需要）
+        // 1. HTML转义（防御XSS攻击）：转义所有HTML特殊字符
         String originalMsg = newMessageVo.getMessage();
+        if (!StringUtils.isEmpty(originalMsg)) {
+            // 转义后覆盖原始消息（&、<、>、"、'等特殊字符会被转义为实体编码）
+            String escapedMsg = HtmlUtils.htmlEscape(originalMsg);
+            newMessageVo.setMessage(escapedMsg);
+        }
+
+        // 2. 敏感词过滤（基于转义后的内容处理）
         if (!StringUtils.isEmpty(originalMsg)) {
             String[] filteredResult = sensitiveFilter.filter(originalMsg);
             if (filteredResult != null) {
@@ -298,7 +423,6 @@ public class SocketIoListener {
             // 单聊消息发送前，强制验证好友关系
             // 客服直接放行，买家需校验好友关系
             if (!isCustomerService) {
-                String receiverId = newMessageVo.getReceiverId();
                 if (StringUtils.isEmpty(receiverId)) {
                     logger.error("sendNewMessage: 单聊接收者ID为空");
                     client.sendEvent("sendFailed", "接收者信息不完整");
@@ -325,7 +449,6 @@ public class SocketIoListener {
 
         if (ConstValueEnum.FRIEND.equals(newMessageVo.getConversationType())) {
             // 单聊：接收者为明确的receiverId
-            String receiverId = newMessageVo.getReceiverId();
             if (!StringUtils.isEmpty(receiverId)) {
                 boolean isReceiverOnline = onlineUserService.checkCurUserIsOnline(receiverId);
                 if (isReceiverOnline) {
@@ -368,6 +491,20 @@ public class SocketIoListener {
         }
     }
 
+//    /**
+//     * 构建待签名的内容字符串（包含核心字段，防止篡改）
+//     */
+//    private String buildSignContent(NewMessageVo vo) {
+//        // 包含关键业务字段，按固定顺序拼接（前后端需保持一致）
+//        return String.join("|",
+//                vo.getSenderId(),
+//                vo.getReceiverId(),
+//                vo.getRoomId(),
+//                vo.getConversationType(),
+//                vo.getMessage() == null ? "" : vo.getMessage(),
+//                String.valueOf(vo.getTimestamp())
+//        );
+//    }
 
     /**
      * 处理卡片消息生成，仅在单聊场景被调用

@@ -22,6 +22,7 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 
 import javax.annotation.Resource;
 
@@ -81,6 +82,10 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
                 // 再通过OncePerRequestFilter，对其它请求过滤
                 .addFilter(new JwtPreAuthFilter(authenticationManager(), onlineUserService))
                 .httpBasic().authenticationEntryPoint(new UnAuthEntryPoint()); //没有权限访问
+        http.csrf()
+                .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse()) // 前端可获取
+                .and()
+                .authorizeRequests();
     }
 
 }

@@ -13,6 +13,7 @@ import com.zzw.chatserver.service.GoodFriendService;
 import com.zzw.chatserver.service.UserService;
 import com.zzw.chatserver.utils.ChatServerUtil;
 import com.zzw.chatserver.utils.DateUtil;
+import com.zzw.chatserver.utils.ValidationUtil;
 import org.bson.types.ObjectId;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -50,6 +51,14 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public Map<String, Object> registerServiceUser(RegisterRequestVo rVo, String operatorId) {
+        // 校验操作者ID格式
+        if (!ValidationUtil.isValidObjectId(operatorId)) {
+            Map<String, Object> errorMap = new HashMap<>();
+            errorMap.put("code", ResultEnum.PARAM_ERROR.getCode());
+            errorMap.put("msg", "操作者ID格式错误");
+            return errorMap;
+        }
+
         Map<String, Object> map = new HashMap<>();
         Integer code = null;
         String msg = null;

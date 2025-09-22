@@ -10,6 +10,7 @@ import java.util.Set;
  * - 绑定客户端ID与用户信息
  * - 维护在线用户UID集合
  * - 查询在线状态、在线用户数等
+ * - 强化Session与用户的绑定关系，支持clientId与userId的双向映射
  */
 public interface OnlineUserService {
 
@@ -52,4 +53,18 @@ public interface OnlineUserService {
      * @return true=在线，false=离线（Redis查询异常时返回false）
      */
     boolean checkCurUserIsOnline(String uid);
+
+    /**
+     * 延长客户端与用户绑定关系的过期时间（用于心跳续期）
+     * @param clientId
+     * @param uid
+     */
+    void renewExpiration(String clientId, String uid);
+
+    /**
+     * 根据客户ID查询绑定的用户信息
+     * @param uid
+     * @return
+     */
+    String getClientIdByUid(String uid);
 }

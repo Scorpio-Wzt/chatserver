@@ -24,7 +24,8 @@ public class NewMessageVo {
     private String messageType;// 消息的类型：emoji/text/img/file/sys
     private List<String> isReadUser; // 判断已经读取的用户，在发送消息时默认发送方已读取
     private String conversationType;
-    // 新增字段
     private String cardType; // 卡片类型：如"serviceCard"标识服务卡片
     private List<CardOptionVo> cardOptions; // 卡片中的操作选项
+//    private String signature; // 消息签名（Base64编码）
+//    private Long timestamp; // 时间戳（毫秒级，防重放+签名内容）
 }

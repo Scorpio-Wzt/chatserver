@@ -27,6 +27,7 @@ public enum ResultEnum {
     ERROR_SETTING_EMAIL(1012, "设置邮箱错误"),
     ILLEGAL_OPERATION(4001, "非法操作"),
     PERMISSION_DENIED(403, "权限不足，仅超级管理员可操作"),
+    PARAM_ERROR(400, "参数错误"), // 参数错误枚举项,
     ;
 
 

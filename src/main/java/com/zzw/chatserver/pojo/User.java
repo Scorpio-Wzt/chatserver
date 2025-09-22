@@ -45,6 +45,7 @@ public class User {
     private Integer age = 18;
     private Long onlineTime = 0L; //在线时长
     private BrowserSetting loginSetting; //登录设备信息
+//    private String publicKey;// 公钥字段（存储Base64编码的RSA公钥）
     //分组信息，默认添加“我的好友” 这个分组
     private Map<String, ArrayList<String>> friendFenZu = new HashMap<String, ArrayList<String>>() {
         {
