@@ -2,10 +2,13 @@ package com.zzw.chatserver.controller;
 
 import com.zzw.chatserver.common.R;
 import com.zzw.chatserver.common.ResultEnum;
+import com.zzw.chatserver.common.UserRoleEnum;
 import com.zzw.chatserver.pojo.Group;
+import com.zzw.chatserver.pojo.User;
 import com.zzw.chatserver.pojo.vo.*;
 import com.zzw.chatserver.service.GroupService;
 import com.zzw.chatserver.service.GroupUserService;
+import com.zzw.chatserver.service.UserService;
 import io.swagger.annotations.Api;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
@@ -22,6 +25,9 @@ public class GroupController {
 
     @Resource
     private GroupService groupService;
+
+    @Resource
+    private UserService userService; // 查询用户角色
 
     /**
      * 根据用户名获取我的群聊列表
@@ -67,11 +73,27 @@ public class GroupController {
     }
 
     /**
-     * 创建群聊
+     * 创建群聊（仅客服可操作）
      */
     @PostMapping("/createGroup")
     public R createGroup(@RequestBody CreateGroupRequestVo requestVo) {
+        // 1. 获取当前登录用户ID
+        String currentUserId = (String) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+
+        // 2. 查询当前用户信息，判断是否为客服
+        User currentUser = userService.getUserInfo(currentUserId); // 假设存在该方法
+
+        if (currentUser == null || !UserRoleEnum.CUSTOMER_SERVICE.getCode().equals(currentUser.getRole())) {
+            return R.error().resultEnum(ResultEnum.PERMISSION_DENIED).message("仅客服账号可创建群聊");
+        }
+
+        // 3. 校验通过，继续创建群聊
+        requestVo.setHolderUserId(currentUserId);
+        requestVo.setHolderName(currentUser.getNickname());
         String groupCode = groupService.createGroup(requestVo);
+        if (groupCode == null || groupCode.isEmpty()) {
+            return R.error().message("群聊创建失败");
+        }
         return R.ok().data("groupCode", groupCode);
     }
 

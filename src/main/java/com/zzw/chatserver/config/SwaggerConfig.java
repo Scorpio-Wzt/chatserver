@@ -28,8 +28,8 @@ public class SwaggerConfig {
 
     private ApiInfo webApiInfo() {
         return new ApiInfoBuilder()
-                .title("聊天系统API文档")
-                .description("本文档描述了聊天系统接口定义")
+                .title("客服系统API文档")
+                .description("客服系统接口定义")
                 .version("1.0")
                 .contact(new Contact("cebbank", "https://www.cebbank.com/", "ztaiwu1116@163.com"))
                 .build();
