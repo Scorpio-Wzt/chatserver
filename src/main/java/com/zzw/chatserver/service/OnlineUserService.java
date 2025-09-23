@@ -15,6 +15,21 @@ import java.util.Set;
 public interface OnlineUserService {
 
     /**
+     * 续期客户端和用户的绑定关系过期时间
+     * @param clientId 客户端ID
+     * @param uid 用户ID
+     * @param expirationMs 过期时间(毫秒)
+     */
+    void renewExpiration(String clientId, String uid, long expirationMs);
+
+    /**
+     * 清理过期的客户端绑定
+     * @param expirationThresholdMs 过期阈值(毫秒)，超过此时长未活动的客户端将被清理
+     * @return 清理的客户端数量
+     */
+    int cleanExpiredClients(long expirationThresholdMs);
+
+    /**
      * 绑定客户端ID与用户信息（并将用户UID加入在线集合）
      * @param clientId 客户端唯一标识
      * @param simpleUser 用户简化信息（含UID、昵称等）
@@ -53,13 +68,6 @@ public interface OnlineUserService {
      * @return true=在线，false=离线（Redis查询异常时返回false）
      */
     boolean checkCurUserIsOnline(String uid);
-
-    /**
-     * 延长客户端与用户绑定关系的过期时间（用于心跳续期）
-     * @param clientId
-     * @param uid
-     */
-    void renewExpiration(String clientId, String uid);
 
     /**
      * 根据客户ID查询绑定的用户信息

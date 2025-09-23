@@ -72,7 +72,7 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
                 .and().csrf().disable() // 关闭csrf
                 .sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS) //关闭session（无状态）
                 .and().authorizeRequests() //设置认证请求
-                .antMatchers("/expression/**", "/face/**", "/img/**", "/uploads/**").permitAll() //放行静态资源
+                .antMatchers("/expression/**", "/face/**", "/img/**", "/uploads/**","/chat/user/login").permitAll() //放行静态资源
                 .anyRequest().authenticated()
                 .and().logout().logoutSuccessHandler(new ChatLogoutSuccessHandler()).and()
                 // 添加到过滤链中，放在验证用户密码之前
@@ -82,10 +82,6 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
                 // 再通过OncePerRequestFilter，对其它请求过滤
                 .addFilter(new JwtPreAuthFilter(authenticationManager(), onlineUserService))
                 .httpBasic().authenticationEntryPoint(new UnAuthEntryPoint()); //没有权限访问
-        http.csrf()
-                .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse()) // 前端可获取
-                .and()
-                .authorizeRequests();
     }
 
 }

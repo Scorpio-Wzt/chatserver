@@ -14,6 +14,14 @@ import java.util.List;
 public interface GroupMessageService {
 
     /**
+     * 按消息ID列表标记群聊消息为已读
+     * @param roomId 群聊房间ID
+     * @param userId 当前用户ID
+     * @param messageIds 需标记为已读的消息ID列表
+     */
+    void markGroupMessagesAsRead(String roomId, String userId, List<String> messageIds);
+
+    /**
      * 标记群聊中指定用户的未读消息为已读
      * @param roomId 群聊房间ID
      * @param uid 当前用户UID

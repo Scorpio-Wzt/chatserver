@@ -16,7 +16,7 @@ public class JwtUtils {
     public static final String TOKEN_HEADER = "Authorization";
     public static final String TOKEN_PREFIX = "Bearer ";
     private static final Long EXPIRE = 24 * 3600 * 1000L; //设置一天时间
-    private static final String SECRET = "wzomg"; //用于signature（签名）部分解密
+    private static final String SECRET = "cebbank"; //用于signature（签名）部分解密
 
     //生成token
     public static String createJwt(String userId, String username) {

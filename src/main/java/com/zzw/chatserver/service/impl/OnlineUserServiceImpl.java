@@ -27,6 +27,7 @@ public class OnlineUserServiceImpl implements OnlineUserService {
     private static final String PREFIX_CLIENT_TO_USER = "chat:client:user:"; // clientId -> SimpleUser
     private static final String PREFIX_USER_TO_CLIENT = "chat:user:client:"; // userId -> clientId
     private static final String PREFIX_ONLINE_UID_SET = "chat:online:uids";   // 在线用户集合
+    private static final String PREFIX_ALL_CLIENTS = "chat:all:clients:";
     // 过期时间定义（1小时，可根据业务调整）
     private static final long EXPIRE_HOURS = 1;
     /**
@@ -47,17 +48,90 @@ public class OnlineUserServiceImpl implements OnlineUserService {
     }
 
     /**
-     * 延长客户端与用户绑定关系的过期时间（用于心跳续期）
+     * 续期客户端和用户的绑定关系过期时间
+     * @param clientId 客户端ID
+     * @param uid 用户ID
+     * @param expirationMs 过期时间(毫秒)
      */
     @Override
-    public void renewExpiration(String clientId, String uid) {
+    public void renewExpiration(String clientId, String uid, long expirationMs) {
+        if (clientId == null || uid == null || expirationMs <= 0) {
+            return;
+        }
+
         String clientKey = PREFIX_CLIENT_TO_USER + clientId;
         String userKey = PREFIX_USER_TO_CLIENT + uid;
-        // 续期为1小时
-        redisTemplate.expire(clientKey, EXPIRE_HOURS, TimeUnit.HOURS);
-        redisTemplate.expire(userKey, EXPIRE_HOURS, TimeUnit.HOURS);
+
+        // 续期客户端-用户绑定关系
+        redisTemplate.expire(clientKey, expirationMs, TimeUnit.MILLISECONDS);
+        // 续期用户-客户端绑定关系
+        redisTemplate.expire(userKey, expirationMs, TimeUnit.MILLISECONDS);
     }
 
+    /**
+     * 清理过期的客户端绑定
+     * @param expirationThresholdMs 过期阈值(毫秒)，超过此时长未活动的客户端将被清理
+     * @return 清理的客户端数量
+     */
+    @Override
+    public int cleanExpiredClients(long expirationThresholdMs) {
+        int cleanedCount = 0;
+
+        // 获取所有客户端ID
+        Set<Object> allClients = redisTemplate.opsForSet().members(PREFIX_ALL_CLIENTS);
+        if (allClients == null || allClients.isEmpty()) {
+            return 0;
+        }
+
+        // 检查每个客户端是否过期
+        for (Object clientObj : allClients) {
+            String clientId = clientObj.toString();
+            String clientKey = PREFIX_CLIENT_TO_USER + clientId;
+
+            // 检查键是否存在
+            if (!redisTemplate.hasKey(clientKey)) {
+                // 键已过期或不存在，需要清理
+                cleanClientBinding(clientId);
+                cleanedCount++;
+                continue;
+            }
+
+            // 检查过期时间
+            Long ttl = redisTemplate.getExpire(clientKey, TimeUnit.MILLISECONDS);
+            if (ttl == null || ttl < 0 || ttl > expirationThresholdMs) {
+                // 已过期或剩余时间超过阈值，需要清理
+                cleanClientBinding(clientId);
+                cleanedCount++;
+            }
+        }
+
+        return cleanedCount;
+    }
+
+    /**
+     * 清理客户端的所有绑定关系
+     */
+    private void cleanClientBinding(String clientId) {
+        if (clientId == null) {
+            return;
+        }
+
+        // 获取客户端绑定的用户
+        String clientKey = PREFIX_CLIENT_TO_USER + clientId;
+        SimpleUser user = (SimpleUser) redisTemplate.opsForValue().get(clientKey);
+
+        // 删除客户端-用户绑定
+        redisTemplate.delete(clientKey);
+
+        // 删除用户-客户端绑定
+        if (user != null && user.getUid() != null) {
+            String userKey = PREFIX_USER_TO_CLIENT + user.getUid();
+            redisTemplate.delete(userKey);
+        }
+
+        // 从客户端集合中移除
+        redisTemplate.opsForSet().remove(PREFIX_ALL_CLIENTS, clientId);
+    }
     /**
      * 获取所有在线用户的UID集合
      */

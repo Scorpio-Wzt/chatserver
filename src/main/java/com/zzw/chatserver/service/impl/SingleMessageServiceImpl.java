@@ -7,6 +7,7 @@ import com.zzw.chatserver.pojo.vo.SingleHistoryResultVo;
 import com.zzw.chatserver.pojo.vo.SingleMessageResultVo;
 import com.zzw.chatserver.service.SingleMessageService;
 import org.springframework.data.domain.Sort;
+import org.bson.types.ObjectId;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -24,6 +25,44 @@ public class SingleMessageServiceImpl implements SingleMessageService {
 
     @Resource
     private MongoTemplate mongoTemplate;
+
+    /**
+     * 按消息ID列表标记单聊消息为已读
+     * 逻辑：筛选指定ID的消息 + 接收者匹配当前用户，将用户ID加入isReadUser列表
+     */
+    @Override
+    public void markMessagesAsRead(String userId, List<String> messageIds) {
+        // 参数校验：避免空值/空列表
+        if (StringUtils.isEmpty(userId) || messageIds == null || messageIds.isEmpty()) {
+            return;
+        }
+
+        // 1. 转换消息ID为ObjectId（MongoDB主键类型）
+        List<ObjectId> objectIds = messageIds.stream()
+                .filter(id -> !StringUtils.isEmpty(id) && ObjectId.isValid(id))
+                .map(ObjectId::new)
+                .collect(Collectors.toList());
+        if (objectIds.isEmpty()) {
+            return;
+        }
+
+        // 2. 构建查询条件：消息ID在列表中 + 接收者是当前用户（避免标记其他用户的消息）
+        Criteria criteria = Criteria.where("_id").in(objectIds)
+                .and("receiverId").is(userId)
+                .and("isReadUser").nin(userId); // 只更新未读的消息
+
+        // 3. 构建更新操作：将当前用户ID加入isReadUser列表
+        Update update = new Update();
+        update.addToSet("isReadUser", userId);
+
+        // 4. 批量更新消息状态
+        mongoTemplate.updateMulti(
+                Query.query(criteria),
+                update,
+                SingleMessage.class,
+                "singlemessages"
+        );
+    }
 
     @Override
     public List<SingleMessageResultVo> getUnreadMessages(String uid) {

@@ -30,6 +30,8 @@ server:
   servlet:
     context-path: /chat
   port: 5555
+  ssl:
+    enabled: false  # 禁用 SSL
 #fastdfs:
 #  nginx:
 #    host: https://xxxxx/ # 更换为自己的域名
