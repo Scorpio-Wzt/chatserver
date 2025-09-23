@@ -15,6 +15,8 @@ import com.zzw.chatserver.utils.ChatServerUtil;
 import com.zzw.chatserver.utils.DateUtil;
 import com.zzw.chatserver.utils.ValidationUtil;
 import org.bson.types.ObjectId;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
@@ -34,6 +36,8 @@ import java.util.regex.Pattern;
 @Service
 public class UserServiceImpl implements UserService {
 
+    private static final Logger logger = LoggerFactory.getLogger(UserServiceImpl.class);
+
     @Resource
     private UserDao userDao;
 
@@ -50,92 +54,90 @@ public class UserServiceImpl implements UserService {
     private GoodFriendService goodFriendService;  // 新增这一行
 
     @Override
+    public User findUserByUsername(String username) {
+        // 直接调用 UserDao 的查询方法（你的 UserDao 需有 findUserByUsername 方法，已有则无需修改）
+        return userDao.findUserByUsername(username);
+    }
+
+    @Override
     public Map<String, Object> registerServiceUser(RegisterRequestVo rVo, String operatorId) {
-        // 校验操作者ID格式
-        if (!ValidationUtil.isValidObjectId(operatorId)) {
-            Map<String, Object> errorMap = new HashMap<>();
-            errorMap.put("code", ResultEnum.PARAM_ERROR.getCode());
-            errorMap.put("msg", "操作者ID格式错误");
-            return errorMap;
-        }
-
         Map<String, Object> map = new HashMap<>();
-        Integer code = null;
-        String msg = null;
-        String userCode = null;
-        String userId = null;
+        try {
+            // 校验操作者ID格式
+            if (!ValidationUtil.isValidObjectId(operatorId)) {
+                map.put("code", ResultEnum.PARAM_ERROR.getCode());
+                map.put("msg", "操作者ID格式错误");
+                return map;
+            }
 
-        // 校验操作者是否为超级管理员（需根据你的超级管理员判断逻辑实现）
-        if (!isSuperAdmin(operatorId)) {
-            code = ResultEnum.PERMISSION_DENIED.getCode();
-            msg = "仅超级管理员可创建客服账号";
-            map.put("code", code);
-            map.put("msg", msg);
-            return map;
+            // 校验操作者是否为超级管理员
+            if (!isSuperAdmin(operatorId)) {
+                map.put("code", ResultEnum.PERMISSION_DENIED.getCode());
+                map.put("msg", "仅超级管理员可创建客服账号");
+                return map;
+            }
+
+            // 强制设置角色为客服
+            rVo.setRole(UserRoleEnum.CUSTOMER_SERVICE.getCode());
+
+            // 校验两次密码是否一致
+            if (!rVo.getRePassword().equals(rVo.getPassword())) {
+                map.put("code", ResultEnum.INCORRECT_PASSWORD_TWICE.getCode());
+                map.put("msg", ResultEnum.INCORRECT_PASSWORD_TWICE.getMessage());
+                return map;
+            }
+
+            // 校验用户名是否已存在
+            User existUser = userDao.findUserByUsername(rVo.getUsername());
+            if (existUser != null) {
+                map.put("code", ResultEnum.USER_HAS_EXIST.getCode());
+                map.put("msg", ResultEnum.USER_HAS_EXIST.getMessage());
+                return map;
+            }
+
+            // 生成用户编码
+            AccountPool accountPool = new AccountPool();
+            accountPool.setType(ConstValueEnum.USERTYPE);
+            accountPool.setStatus(ConstValueEnum.ACCOUNT_USED);
+            accountPoolDao.save(accountPool);
+
+            // 加密密码并创建用户
+            String encryptedPwd = bCryptPasswordEncoder.encode(rVo.getPassword());
+            User user = new User();
+            user.setUsername(rVo.getUsername());
+            user.setPassword(encryptedPwd);
+            user.setCode(String.valueOf(accountPool.getCode() + ConstValueEnum.INITIAL_NUMBER));
+            user.setPhoto(rVo.getAvatar());
+            user.setNickname(rVo.getNickname() != null ? rVo.getNickname() : ChatServerUtil.randomNickname());
+            user.setSignUpTime(new Date());
+            user.setStatus(0);
+            user.setRole(UserRoleEnum.CUSTOMER_SERVICE.getCode());
+
+            userDao.save(user);
+
+            // 处理自动好友关系
+            handleAutoFriendRelation(user);
+
+            // 准备返回数据
+            map.put("code", ResultEnum.REGISTER_SUCCESS.getCode());
+            map.put("msg", ResultEnum.REGISTER_SUCCESS.getMessage());
+            map.put("userCode", user.getCode());
+            map.put("userId", user.getUserId().toString()); // 补充userId返回
+
+        } catch (Exception e) {
+            logger.error("注册客服账号异常", e);
+            map.put("code", ResultEnum.SYSTEM_ERROR.getCode());
+            map.put("msg", "注册失败：" + e.getMessage());
         }
-
-        // 强制设置角色为客服（忽略请求中的role参数，防止恶意修改）
-        rVo.setRole(UserRoleEnum.CUSTOMER_SERVICE.getCode());
-
-        // 校验两次密码是否一致
-        if (!rVo.getRePassword().equals(rVo.getPassword())) {
-            code = ResultEnum.INCORRECT_PASSWORD_TWICE.getCode();
-            msg = ResultEnum.INCORRECT_PASSWORD_TWICE.getMessage();
-            map.put("code", code);
-            map.put("msg", msg);
-            return map;
-        }
-
-        // 校验用户名是否已存在
-        User existUser = userDao.findUserByUsername(rVo.getUsername());
-        if (existUser != null) {
-            code = ResultEnum.USER_HAS_EXIST.getCode();
-            msg = ResultEnum.USER_HAS_EXIST.getMessage();
-            map.put("code", code);
-            map.put("msg", msg);
-            return map;
-        }
-
-        // 生成用户编码、加密密码等
-        AccountPool accountPool = new AccountPool();
-        accountPool.setType(ConstValueEnum.USERTYPE);
-        accountPool.setStatus(ConstValueEnum.ACCOUNT_USED);
-        accountPoolDao.save(accountPool);
-
-        String encryptedPwd = bCryptPasswordEncoder.encode(rVo.getPassword());
-        User user = new User();
-        user.setUsername(rVo.getUsername());
-        user.setPassword(encryptedPwd);
-        user.setCode(String.valueOf(accountPool.getCode() + ConstValueEnum.INITIAL_NUMBER));
-        user.setPhoto(rVo.getAvatar());
-        user.setNickname(rVo.getNickname() != null ? rVo.getNickname() : ChatServerUtil.randomNickname());
-        user.setSignUpTime(new Date());
-        user.setStatus(0);
-        user.setRole(UserRoleEnum.CUSTOMER_SERVICE.getCode()); // 强制客服角色
-
-        userDao.save(user);
-
-        // 4. 处理客服的自动好友关系（与所有现有用户关联）
-        handleAutoFriendRelation(user);
-
-        // 5. 返回结果（包含userId，供管理员后续操作）
-        userCode = user.getCode();
-        code = ResultEnum.REGISTER_SUCCESS.getCode();
-        msg = ResultEnum.REGISTER_SUCCESS.getMessage();
-        map.put("code", code);
-        map.put("msg", msg);
-        map.put("userCode", userCode);
-
         return map;
     }
 
-    // 新增：判断操作者是否为超级管理员（需根据你的实际逻辑实现）
     public boolean isSuperAdmin(String operatorId) {
         User operator = userDao.findById(new ObjectId(operatorId)).orElse(null);
         if (operator == null) {
             return false;
         }
-        // 根据管理员角色信息，超级管理员的role标识为0
+        // 超级管理员角色标识为0
         return "0".equals(operator.getRole());
     }
 

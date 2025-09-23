@@ -13,6 +13,13 @@ import java.util.Map;
 public interface UserService {
 
     /**
+     * 根据用户名查询用户（用于 UserDetailsServiceImpl 加载用户）
+     * @param username 登录用户名
+     * @return 完整的 User 实体（包含 username、password、role、status 等字段）
+     */
+    User findUserByUsername(String username);
+
+    /**
      * 管理员身份校验
      * @param operatorId 校验请求参数（operatorId）
      * @return 注册结果Boolean

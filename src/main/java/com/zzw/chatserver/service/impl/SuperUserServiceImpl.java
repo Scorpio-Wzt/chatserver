@@ -31,6 +31,9 @@ public class SuperUserServiceImpl implements SuperUserService {
     @Resource
     private BCryptPasswordEncoder bCryptPasswordEncoder;
 
+    @Resource
+    private JwtUtils jwtUtils;
+
     /**
      * 账号不存在时新增超级用户
      */
@@ -96,7 +99,7 @@ public class SuperUserServiceImpl implements SuperUserService {
                 code = ResultEnum.LOGIN_SUCCESS.getCode();
                 msg = ResultEnum.LOGIN_SUCCESS.getMessage();
                 // 生成JWT（参数：超级用户ID、账号）
-                String jwtToken = JwtUtils.createJwt(
+                String jwtToken = jwtUtils.createJwt(
                         existUser.getSid().toString(),
                         existUser.getAccount()
                 );

@@ -55,6 +55,24 @@ public class UserController {
         return R.ok().data("code", verificationCode);
     }
 
+    @PostMapping("/registerService")
+    public R registerServiceUser(@RequestBody RegisterRequestVo rVo) {
+        // 获取当前登录用户ID
+        String operatorId = (String) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+
+        // 调用服务层方法（服务层已包含权限校验）
+        Map<String, Object> resMap = userService.registerServiceUser(rVo, operatorId);
+
+        Integer code = (Integer) resMap.get("code");
+        if (code.equals(ResultEnum.REGISTER_SUCCESS.getCode())) {
+            return R.ok()
+                    .message("客服注册成功")
+                    .data("userCode", resMap.get("userCode"))
+                    .data("userId", resMap.get("userId"));
+        } else {
+            return R.error().code(code).message((String) resMap.get("msg"));
+        }
+    }
 
     /**
      * 用户注册

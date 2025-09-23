@@ -21,6 +21,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
+import javax.annotation.Resource;
 import javax.servlet.FilterChain;
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
@@ -35,6 +36,9 @@ public class JwtLoginAuthFilter extends UsernamePasswordAuthenticationFilter {
     private MongoTemplate mongoTemplate;
 
     private OnlineUserService onlineUserService;
+
+    @Resource
+    private JwtUtils jwtUtils;
 
     public JwtLoginAuthFilter(AuthenticationManager authenticationManager, MongoTemplate mongoTemplate, OnlineUserService onlineUserService) {
         this.authenticationManager = authenticationManager;
@@ -93,7 +97,7 @@ public class JwtLoginAuthFilter extends UsernamePasswordAuthenticationFilter {
                 UpdateResult updateResult = mongoTemplate.upsert(query, update, User.class);
                 // System.out.println("更新用户表是否成功？" + updateResult);
                 //生成token
-                String token = JwtUtils.createJwt(jwtUser.getUserId().toString(), jwtUser.getUsername());
+                String token = jwtUtils.createJwt(jwtUser.getUserId().toString(), jwtUser.getUsername());
                 ResponseUtil.out(response, R.ok().resultEnum(ResultEnum.LOGIN_SUCCESS).data("token", token).data("userInfo", jwtUser));
             }
         } catch (IOException e) {

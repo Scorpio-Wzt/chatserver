@@ -52,11 +52,6 @@ public class SuperUserController {
     public R registerServiceUser(@RequestBody RegisterRequestVo rVo) {
         // 获取当前登录用户（必须是超级管理员）
         String operatorId = (String) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-        boolean isSuperAdmin = userService.isSuperAdmin(operatorId);
-        if (!isSuperAdmin) {
-            return R.error().code(ResultEnum.PERMISSION_DENIED.getCode())
-                    .message("仅超级管理员可注册客服");
-        }
         Map<String, Object> resMap = userService.registerServiceUser(rVo, operatorId);
         Integer code = (Integer) resMap.get("code");
         if (code.equals(ResultEnum.REGISTER_SUCCESS.getCode())) {

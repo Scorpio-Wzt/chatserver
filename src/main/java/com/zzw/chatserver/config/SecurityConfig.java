@@ -6,30 +6,31 @@ import com.zzw.chatserver.filter.JwtPreAuthFilter;
 import com.zzw.chatserver.filter.KaptchaFilter;
 import com.zzw.chatserver.handler.ChatLogoutSuccessHandler;
 import com.zzw.chatserver.service.OnlineUserService;
+import com.zzw.chatserver.utils.JwtUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableGlobalMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-import org.springframework.security.config.annotation.web.builders.WebSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.config.annotation.web.configuration.WebSecurityConfigurerAdapter;
+import org.springframework.security.config.annotation.web.configuration.WebSecurityCustomizer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 
 import javax.annotation.Resource;
 
 @Configuration
 @EnableWebSecurity
 @EnableGlobalMethodSecurity(prePostEnabled = true)
-public class SecurityConfig extends WebSecurityConfigurerAdapter {
+public class SecurityConfig{
 
     @Autowired
     @Qualifier("userDetailsServiceImpl")
@@ -44,44 +45,77 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
     @Resource
     private OnlineUserService onlineUserService;
 
-    //加密器
+    @Autowired
+    private JwtUtils jwtUtils;
+
+    @Autowired
+    private ChatLogoutSuccessHandler chatLogoutSuccessHandler;
+
+    @Autowired
+    private UnAuthEntryPoint unAuthEntryPoint;
+
+    @Autowired
+    private AuthenticationManager authenticationManager;
+
+    // 1. 保留密码编码器
     @Bean
     public BCryptPasswordEncoder bCryptPasswordEncoder() {
         return new BCryptPasswordEncoder();
     }
 
-    //加载 userDetailsService，用于从数据库中取用户信息
-    @Override
-    protected void configure(AuthenticationManagerBuilder auth) throws Exception {
-        auth.userDetailsService(userDetailsService).passwordEncoder(bCryptPasswordEncoder());
+    // 2. 注册AuthenticationManager（之前的配置）
+    @Bean
+    public AuthenticationManager authenticationManager(AuthenticationConfiguration authConfig) throws Exception {
+        return authConfig.getAuthenticationManager();
     }
 
-    //不进行认证的路径，可以直接访问
-    @Override
-    public void configure(WebSecurity web) throws Exception {
-        //巨坑，这里不能加上context-path:/chat，不然不能拦截
-        web.ignoring().antMatchers("/user/getCode", "/sys/getFaceImages", "/user/register", "/sys/downloadFile",
-                "/swagger-resources/**", "/webjars/**", "/v2/**", "/swagger-ui.html/**", "/superuser/login"
+    // 3. 替换WebSecurity配置为WebSecurityCustomizer Bean
+    @Bean
+    public WebSecurityCustomizer webSecurityCustomizer() {
+        return (web) -> web.ignoring().antMatchers(
+                "/user/getCode",
+                "/sys/getFaceImages",
+                "/user/register",
+                "/sys/downloadFile",
+                "/swagger-resources/**",
+                "/webjars/**",
+                "/v2/**",
+                "/swagger-ui.html/**",
+                "/superuser/login"
         );
     }
 
-    @Override
-    protected void configure(HttpSecurity http) throws Exception {
-        // 开启跨域资源共享
-        http.cors()
-                .and().csrf().disable() // 关闭csrf
-                .sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS) //关闭session（无状态）
-                .and().authorizeRequests() //设置认证请求
-                .antMatchers("/expression/**", "/face/**", "/img/**", "/uploads/**","/chat/user/login").permitAll() //放行静态资源
-                .anyRequest().authenticated()
-                .and().logout().logoutSuccessHandler(new ChatLogoutSuccessHandler()).and()
-                // 添加到过滤链中，放在验证用户密码之前
+    @Bean
+    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+        http
+                // 1. 跨域配置（保持原有）
+                .cors().and()
+                // 2. 关闭CSRF（JWT无状态，无需CSRF保护）
+                .csrf().disable()
+                // 3. 关闭Session（JWT无状态，不依赖Session）
+                .sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS).and()
+                // 4. 认证请求规则（保持原有）
+                .authorizeRequests()
+                // 放行静态资源和登录接口
+                .antMatchers("/expression/**", "/face/**", "/img/**", "/uploads/**", "/chat/user/login").permitAll()
+                // 其他所有请求需认证
+                .anyRequest().authenticated().and()
+                // 5. 退出登录配置（保持原有）
+                .logout().logoutSuccessHandler(chatLogoutSuccessHandler).and()
+                // 6. 验证码过滤器（放在登录过滤器之前，保持原有）
                 .addFilterBefore(new KaptchaFilter(redisTemplate), UsernamePasswordAuthenticationFilter.class)
-                // 先是UsernamePasswordAuthenticationFilter用于login校验
-                .addFilter(new JwtLoginAuthFilter(authenticationManager(), mongoTemplate, onlineUserService))
-                // 再通过OncePerRequestFilter，对其它请求过滤
-                .addFilter(new JwtPreAuthFilter(authenticationManager(), onlineUserService))
-                .httpBasic().authenticationEntryPoint(new UnAuthEntryPoint()); //没有权限访问
-    }
+                // 7. JWT认证过滤器：放在UsernamePasswordAuthenticationFilter之前，优先验证JWT
+                .addFilterBefore(
+                        new JwtPreAuthFilter(jwtUtils, userDetailsService), // 修正构造器参数
+                        UsernamePasswordAuthenticationFilter.class
+                )
+                // 8. 登录过滤器：处理/login请求，生成JWT（保持原有，但注意顺序）
+                .addFilter(
+                        new JwtLoginAuthFilter(authenticationManager, mongoTemplate, onlineUserService)
+                )
+                // 9. 未认证处理（保持原有）
+                .httpBasic().authenticationEntryPoint(unAuthEntryPoint);
 
+        return http.build();
+    }
 }

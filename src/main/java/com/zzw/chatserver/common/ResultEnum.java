@@ -7,6 +7,8 @@ public enum ResultEnum {
 
     SUCCESS(2000, "成功"),
     ERROR(2001, "失败"),
+    /** 系统未知错误 */
+    SYSTEM_ERROR(1000, "系统未知错误，请联系管理员"),
     ACCOUNT_IS_FROZEN_OR_CANCELLED(1200, "账号被冻结或注销"),
     KAPTCHA_TIME_OUT_OR_ERROR(1007, "验证码失效或错误"),
     ACCOUNT_NOT_FOUND(1001, "账号不存在"),
