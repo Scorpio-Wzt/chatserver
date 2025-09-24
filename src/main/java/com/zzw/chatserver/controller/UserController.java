@@ -146,9 +146,9 @@ public class UserController {
      * 获取用户详情
      */
     @GetMapping("/getUserInfo")
-    public R getUserInfo(String uid) {
-        User userInfo = userService.getUserInfo(uid);
-        return R.ok().data("userInfo", userInfo);
+    public R getUserInfo(@RequestParam("userId") String userId) {
+        User user = userService.getUserInfo(userId);
+        return R.ok().data("userInfo", user);
     }
 
     /**

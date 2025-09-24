@@ -11,7 +11,7 @@ public class CreateOrderVo {
     private String userId;  // 购买用户ID
 
     @NotBlank(message = "客服ID不能为空")
-    private String customerId;  // 关联客服ID（新增，必传）
+    private String customerId;  // 关联客服ID
 
     @NotBlank(message = "商品名称不能为空")
     private String productName; // 商品名称

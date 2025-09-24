@@ -3,6 +3,7 @@ package com.zzw.chatserver.service.impl;
 import com.zzw.chatserver.common.ConstValueEnum;
 import com.zzw.chatserver.common.ResultEnum;
 import com.zzw.chatserver.common.UserRoleEnum;
+import com.zzw.chatserver.common.exception.BusinessException;
 import com.zzw.chatserver.dao.AccountPoolDao;
 import com.zzw.chatserver.dao.UserDao;
 import com.zzw.chatserver.pojo.AccountPool;
@@ -331,6 +332,13 @@ public class UserServiceImpl implements UserService {
      */
     @Override
     public User getUserInfo(String userId) {
+        // 1. 校验 userId 是否符合 ObjectId 格式（24位十六进制字符串）
+        if (userId == null || !ObjectId.isValid(userId)) {
+            // 可根据业务需求选择：抛异常 / 返回 null / 日志提示
+            throw new BusinessException("用户ID格式错误，需为有效的ObjectId（24位十六进制字符串）");
+            // 或直接返回 null：return null;
+        }
+        // 2. 格式有效时，用 ObjectId 查询 _id 字段
         return userDao.findById(new ObjectId(userId)).orElse(null);
     }
 
