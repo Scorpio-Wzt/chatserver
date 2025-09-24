@@ -40,11 +40,13 @@ public class JwtLoginAuthFilter extends UsernamePasswordAuthenticationFilter {
     @Resource
     private JwtUtils jwtUtils;
 
+    // 构造器参数：AuthenticationManager + 其他业务依赖
     public JwtLoginAuthFilter(AuthenticationManager authenticationManager, MongoTemplate mongoTemplate, OnlineUserService onlineUserService) {
         this.authenticationManager = authenticationManager;
         this.mongoTemplate = mongoTemplate;
         this.onlineUserService = onlineUserService;
-        this.setFilterProcessesUrl("/user/login");
+        // 可选：设置登录请求的 URL（默认是 /login，若你的登录接口是 /chat/user/login，需修改）
+        this.setFilterProcessesUrl("/chat/user/login");
     }
 
     //登录验证

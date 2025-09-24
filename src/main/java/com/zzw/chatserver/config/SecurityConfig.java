@@ -24,8 +24,15 @@ import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 
 import javax.annotation.Resource;
+import javax.servlet.FilterChain;
+import javax.servlet.ServletException;
+import javax.servlet.ServletRequest;
+import javax.servlet.ServletResponse;
+import javax.servlet.http.HttpServletRequest;
+import java.io.IOException;
 
 @Configuration
 @EnableWebSecurity
@@ -54,22 +61,12 @@ public class SecurityConfig{
     @Autowired
     private UnAuthEntryPoint unAuthEntryPoint;
 
-    @Autowired
-    private AuthenticationManager authenticationManager;
-
-    // 1. 保留密码编码器
-    @Bean
-    public BCryptPasswordEncoder bCryptPasswordEncoder() {
-        return new BCryptPasswordEncoder();
-    }
-
-    // 2. 注册AuthenticationManager（之前的配置）
+    // 配置认证管理器（用于登录过滤器）
     @Bean
     public AuthenticationManager authenticationManager(AuthenticationConfiguration authConfig) throws Exception {
         return authConfig.getAuthenticationManager();
     }
 
-    // 3. 替换WebSecurity配置为WebSecurityCustomizer Bean
     @Bean
     public WebSecurityCustomizer webSecurityCustomizer() {
         return (web) -> web.ignoring().antMatchers(
@@ -86,7 +83,8 @@ public class SecurityConfig{
     }
 
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain securityFilterChain(HttpSecurity http,
+                                                   AuthenticationConfiguration authConfig) throws Exception {
         http
                 // 1. 跨域配置（保持原有）
                 .cors().and()
@@ -96,24 +94,37 @@ public class SecurityConfig{
                 .sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS).and()
                 // 4. 认证请求规则（保持原有）
                 .authorizeRequests()
-                // 放行静态资源和登录接口
-                .antMatchers("/expression/**", "/face/**", "/img/**", "/uploads/**", "/chat/user/login").permitAll()
-                // 其他所有请求需认证
-                .anyRequest().authenticated().and()
+                    // 放行静态资源和登录接口
+                    .antMatchers("/chat/user/login").permitAll()
+                    .antMatchers("/expression/**", "/face/**", "/img/**", "/uploads/**").permitAll()
+                    // 其他所有请求需认证
+                    .anyRequest().authenticated()
+                .and()
                 // 5. 退出登录配置（保持原有）
-                .logout().logoutSuccessHandler(chatLogoutSuccessHandler).and()
-                // 6. 验证码过滤器（放在登录过滤器之前，保持原有）
-                .addFilterBefore(new KaptchaFilter(redisTemplate), UsernamePasswordAuthenticationFilter.class)
-                // 7. JWT认证过滤器：放在UsernamePasswordAuthenticationFilter之前，优先验证JWT
+                .logout()
+                    .logoutRequestMatcher(new AntPathRequestMatcher("/logout", "POST"))
+                    .logoutSuccessHandler(chatLogoutSuccessHandler)
+                    .permitAll()
+                .and()
+                // 验证码过滤器：只拦截需要验证码的请求（如普通注册），排除登录请求（避免消耗InputStream）
                 .addFilterBefore(
-                        new JwtPreAuthFilter(jwtUtils, userDetailsService), // 修正构造器参数
+                        new KaptchaFilter(redisTemplate), // 使用修正后的KaptchaFilter（已排除登录接口）
                         UsernamePasswordAuthenticationFilter.class
                 )
-                // 8. 登录过滤器：处理/login请求，生成JWT（保持原有，但注意顺序）
-                .addFilter(
-                        new JwtLoginAuthFilter(authenticationManager, mongoTemplate, onlineUserService)
+                .addFilterBefore(
+                        new JwtPreAuthFilter(jwtUtils, userDetailsService),
+                        UsernamePasswordAuthenticationFilter.class
                 )
-                // 9. 未认证处理（保持原有）
+                // 5. 登录过滤器,处理登录请求
+                .addFilterAt(
+                        new JwtLoginAuthFilter(
+                                authenticationManager(authConfig), // 注入认证管理器
+                                mongoTemplate,
+                                onlineUserService
+                        ),
+                        UsernamePasswordAuthenticationFilter.class
+                )
+                // 未认证时的处理（返回JSON而非默认页面）
                 .httpBasic().authenticationEntryPoint(unAuthEntryPoint);
 
         return http.build();

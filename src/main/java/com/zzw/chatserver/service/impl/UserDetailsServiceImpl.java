@@ -1,7 +1,9 @@
 package com.zzw.chatserver.service.impl;
 
 import com.zzw.chatserver.common.UserRoleEnum;
+import com.zzw.chatserver.pojo.SuperUser;
 import com.zzw.chatserver.pojo.User;
+import com.zzw.chatserver.service.SuperUserService;
 import com.zzw.chatserver.service.UserService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,6 +32,8 @@ public class UserDetailsServiceImpl implements UserDetailsService {
     @Autowired
     private UserService userService;
 
+    @Autowired
+    private SuperUserService superUserService; // 注入超级用户服务，用于查询超级用户
     /**
      * 核心方法：根据用户名加载用户信息（Spring Security 自动调用）
      * @param username 登录用户名（与你的 User 实体的 username 字段对应）
@@ -38,65 +42,72 @@ public class UserDetailsServiceImpl implements UserDetailsService {
      */
     @Override
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
-        // 1. 校验用户名非空
-        if (!StringUtils.hasText(username)) {
-            logger.error("用户认证失败：用户名为空");
-            throw new UsernameNotFoundException("用户名不能为空");
+        // 1. 先查询【普通用户】（匹配 username 字段）
+        User normalUser = userService.findUserByUsername(username);
+        if (normalUser != null) {
+            return buildUserDetails(normalUser, normalUser.getUsername(), normalUser.getPassword(), normalUser.getRole());
         }
 
-        // 2. 调用你的业务层查询用户（依赖 UserService 已实现的查询逻辑）
-        // 注意：你的 UserServiceImpl 中已有 userDao.findUserByUsername 调用，此处直接复用
-        User user = userService.findUserByUsername(username);
-
-        // 3. 处理用户不存在的情况
-        if (user == null) {
-            logger.error("用户认证失败：用户名[{}]不存在", username);
-            throw new UsernameNotFoundException("用户名或密码错误");
+        // 2. 普通用户不存在，查询【超级用户】（匹配 account 字段）
+        SuperUser superUser = superUserService.existSuperUser(username);
+        if (superUser != null) {
+            return buildUserDetails(superUser, superUser.getAccount(), superUser.getPassword(), "0"); // 超级用户角色编码固定为 "0"
         }
 
-        // 4. 处理账号状态异常（0=正常，1=冻结，2=注销）
-        if (user.getStatus() == null || user.getStatus() != 0) {
-            String statusMsg = user.getStatus() == 1 ? "已冻结" : "已注销";
-            logger.error("用户认证失败：用户名[{}]账号{}", username, statusMsg);
-            throw new UsernameNotFoundException("账号" + statusMsg + "，请联系管理员");
-        }
-
-        // 5. 处理密码为空的异常情况（正常注册流程会加密存储，此处防脏数据）
-        if (!StringUtils.hasText(user.getPassword())) {
-            logger.error("用户认证失败：用户名[{}]密码未设置", username);
+        // 3. 两种用户都不存在，抛出异常
+        logger.error("用户认证失败：用户名/账号[{}]不存在", username);
+        throw new UsernameNotFoundException("用户名或密码错误");
+    }
+    /**
+     * 通用方法：将普通用户/超级用户转换为 Spring Security 的 UserDetails
+     */
+    private UserDetails buildUserDetails(Object user, String username, String password, String roleCode) {
+        // 处理账号启用状态（普通用户用 status 字段，超级用户默认启用）
+        boolean isEnabled = true;
+        // 校验密码是否为空（普通用户和超级用户都需要密码）
+        if (!StringUtils.hasText(password)) {
+            logger.error("用户认证失败：{}[{}]密码未设置",
+                    user instanceof User ? "普通用户" : "超级用户",
+                    username);
             throw new UsernameNotFoundException("账号异常，请联系管理员");
         }
 
-        // 6. 转换业务角色为 Security 权限（适配你的 UserRoleEnum）
-        List<GrantedAuthority> authorities = getAuthorities(user.getRole());
+        // 仅普通用户需要校验 status 状态
+        if (user instanceof User) {
+            User normalUser = (User) user;
+            isEnabled = normalUser.getStatus() != null && normalUser.getStatus() == 0;
+            if (!isEnabled) {
+                String statusMsg = normalUser.getStatus() == 1 ? "已冻结" : "已注销";
+                logger.error("普通用户认证失败：用户名[{}]账号{}", username, statusMsg);
+                throw new UsernameNotFoundException("账号" + statusMsg + "，请联系管理员");
+            }
+        }
+        // 转换角色编码为 Security 权限
+        List<GrantedAuthority> authorities = getAuthorities(roleCode);
 
-        // 7. 构建并返回 Security 标准 UserDetails 对象
+        // 构建标准 UserDetails 对象
         return new org.springframework.security.core.userdetails.User(
-                user.getUsername(),    // 认证用户名
-                user.getPassword(),    // 数据库中加密后的密码（BCrypt）
-                true,                  // 账号是否启用（已通过 status 校验）
-                true,                  // 账号是否未过期（业务无过期逻辑）
-                true,                  // 密码是否未过期（业务无过期逻辑）
-                true,                  // 账号是否未锁定（业务用 status 控制）
-                authorities            // 用户权限列表
+                username,          // 认证用的用户名/账号
+                password,          // 数据库中加密后的密码（BCrypt）
+                isEnabled,         // 账号是否启用
+                true,              // 账号是否未过期
+                true,              // 密码是否未过期
+                true,              // 账号是否未锁定
+                authorities        // 用户权限列表
         );
     }
 
     /**
-     * 转换业务角色编码为 Security 权限列表
-     * @param roleCode 你的 User 实体中的角色编码（对应 UserRoleEnum）
-     * @return 带 ROLE_ 前缀的权限集合（Security 规范）
+     * 转换角色编码为 Security 权限（与业务角色枚举对齐）
      */
     private List<GrantedAuthority> getAuthorities(String roleCode) {
         List<GrantedAuthority> authorities = new ArrayList<>();
 
-        // 角色编码为空时，默认普通用户角色
         if (!StringUtils.hasText(roleCode)) {
             roleCode = UserRoleEnum.BUYER.getCode();
             logger.warn("用户角色编码为空，默认分配普通用户权限");
         }
 
-        // 根据角色编码匹配权限（严格对应你的 UserRoleEnum）
         switch (roleCode) {
             case "0":  // 超级管理员（ADMIN）
                 authorities.add(new SimpleGrantedAuthority("ROLE_ADMIN"));

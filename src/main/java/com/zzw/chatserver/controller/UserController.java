@@ -3,15 +3,20 @@ package com.zzw.chatserver.controller;
 import com.zzw.chatserver.common.R;
 import com.zzw.chatserver.common.ResultEnum;
 import com.zzw.chatserver.common.UserRoleEnum;
+import com.zzw.chatserver.pojo.SuperUser;
 import com.zzw.chatserver.pojo.User;
 import com.zzw.chatserver.pojo.vo.*;
+import com.zzw.chatserver.service.SuperUserService;
 import com.zzw.chatserver.service.UserService;
 import com.zzw.chatserver.utils.ChatServerUtil;
 import com.zzw.chatserver.utils.RedisKeyUtil;
 import io.swagger.annotations.Api;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
@@ -28,6 +33,8 @@ import java.util.concurrent.TimeUnit;
 public class UserController {
     @Resource
     private UserService userService;
+    @Resource
+    private SuperUserService superUserService;
     @Value("${server.servlet.context-path}")
     private String contextPath;
     @Resource
@@ -57,10 +64,43 @@ public class UserController {
 
     @PostMapping("/registerService")
     public R registerServiceUser(@RequestBody RegisterRequestVo rVo) {
-        // 获取当前登录用户ID
-        String operatorId = (String) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        // 1. 从安全上下文获取认证信息
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
 
-        // 调用服务层方法（服务层已包含权限校验）
+        // 2. 校验认证状态（防止未认证用户调用）
+        if (authentication == null || !authentication.isAuthenticated()
+                || !(authentication.getPrincipal() instanceof UserDetails)) {
+            throw new AuthenticationCredentialsNotFoundException("用户未认证或认证信息异常，无法执行客服注册");
+        }
+
+        // 3. 正确获取 UserDetails 对象（而非强转为 String）
+        UserDetails userDetails = (UserDetails) authentication.getPrincipal();
+        String currentUsername = userDetails.getUsername(); // 获取认证用户名（普通用户/超级用户的账号）
+
+        // 4. 通过业务层查询完整用户信息，获取用户ID（operatorId）
+        // 注意：若当前是超级用户，需调用 SuperUserService 查询；普通用户调用 UserService
+        User currentUser = userService.findUserByUsername(currentUsername);
+        SuperUser currentSuperUser = null;
+        String operatorId = null;
+
+        // 5. 区分普通用户和超级用户，获取对应的用户ID
+        if (currentUser != null) {
+            // 普通用户/客服：从 User 对象获取 userId（ObjectId 转 String）
+            operatorId = currentUser.getUserId().toString();
+        } else {
+            // 超级用户：从 SuperUser 对象获取 sid（假设超级用户ID字段是 sid）
+            currentSuperUser = superUserService.existSuperUser(currentUsername);
+            if (currentSuperUser != null) {
+                operatorId = currentSuperUser.getSid().toString(); // 根据你的 SuperUser 字段调整
+            }
+        }
+
+        // 6. 校验 operatorId 是否获取成功
+        if (operatorId == null) {
+            return R.error().code(ResultEnum.SYSTEM_ERROR.getCode()).message("无法获取当前用户ID，注册失败");
+        }
+
+        // 7. 调用服务层方法（传入正确的 operatorId）
         Map<String, Object> resMap = userService.registerServiceUser(rVo, operatorId);
 
         Integer code = (Integer) resMap.get("code");
