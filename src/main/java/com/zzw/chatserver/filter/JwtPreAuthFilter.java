@@ -36,8 +36,7 @@ public class JwtPreAuthFilter extends OncePerRequestFilter {
     private static final List<String> EXCLUDE_PATHS = Arrays.asList(
             "/user/getCode",
             "/user/login",
-            "/user/register",
-            "/order/create"
+            "/user/register"
     );
 
     @Value("${jwt.secret}")
