@@ -1,10 +1,21 @@
 package com.zzw.chatserver.service.impl;
 
+import com.zzw.chatserver.common.ConstValueEnum;
 import com.zzw.chatserver.common.ResultEnum;
+import com.zzw.chatserver.common.UserRoleEnum;
+import com.zzw.chatserver.dao.AccountPoolDao;
 import com.zzw.chatserver.dao.SuperUserDao;
+import com.zzw.chatserver.dao.UserDao;
+import com.zzw.chatserver.pojo.AccountPool;
+import com.zzw.chatserver.pojo.GoodFriend;
 import com.zzw.chatserver.pojo.SuperUser;
+import com.zzw.chatserver.pojo.User;
+import com.zzw.chatserver.pojo.vo.RegisterRequestVo;
 import com.zzw.chatserver.service.SuperUserService;
+import com.zzw.chatserver.utils.ChatServerUtil;
 import com.zzw.chatserver.utils.JwtUtils;
+import com.zzw.chatserver.utils.ValidationUtil;
+import org.bson.types.ObjectId;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -13,8 +24,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 
 /**
  * 超级用户服务实现类
@@ -34,6 +44,12 @@ public class SuperUserServiceImpl implements SuperUserService {
 
     @Resource
     private JwtUtils jwtUtils;
+
+
+    @Override
+    public SuperUser findBySid(ObjectId sid) {
+        return mongoTemplate.findById(sid, SuperUser.class);
+    }
 
     /**
      * 账号不存在时新增超级用户

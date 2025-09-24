@@ -1,10 +1,12 @@
 package com.zzw.chatserver.service.impl;
 
+import com.zzw.chatserver.auth.entity.JwtAuthUser;
 import com.zzw.chatserver.common.UserRoleEnum;
 import com.zzw.chatserver.pojo.SuperUser;
 import com.zzw.chatserver.pojo.User;
 import com.zzw.chatserver.service.SuperUserService;
 import com.zzw.chatserver.service.UserService;
+import org.bson.types.ObjectId;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -51,7 +53,7 @@ public class UserDetailsServiceImpl implements UserDetailsService {
         // 2. 普通用户不存在，查询【超级用户】（匹配 account 字段）
         SuperUser superUser = superUserService.existSuperUser(username);
         if (superUser != null) {
-            return buildUserDetails(superUser, superUser.getAccount(), superUser.getPassword(), "0"); // 超级用户角色编码固定为 "0"
+            return buildUserDetails(superUser, superUser.getAccount(), superUser.getPassword(), "admin"); // 超级用户角色编码固定为 "0"
         }
 
         // 3. 两种用户都不存在，抛出异常
@@ -61,42 +63,45 @@ public class UserDetailsServiceImpl implements UserDetailsService {
     /**
      * 通用方法：将普通用户/超级用户转换为 Spring Security 的 UserDetails
      */
+// 修改 UserDetailsServiceImpl.java 的 buildUserDetails 方法
     private UserDetails buildUserDetails(Object user, String username, String password, String roleCode) {
-        // 处理账号启用状态（普通用户用 status 字段，超级用户默认启用）
-        boolean isEnabled = true;
-        // 校验密码是否为空（普通用户和超级用户都需要密码）
-        if (!StringUtils.hasText(password)) {
-            logger.error("用户认证失败：{}[{}]密码未设置",
-                    user instanceof User ? "普通用户" : "超级用户",
-                    username);
-            throw new UsernameNotFoundException("账号异常，请联系管理员");
-        }
+        // 1. 创建自定义 JwtAuthUser 实例（继承自业务 User 实体，包含 userId）
+        JwtAuthUser jwtAuthUser = new JwtAuthUser();
+        jwtAuthUser.setUsername(username);
+        jwtAuthUser.setPassword(password);
 
-        // 仅普通用户需要校验 status 状态
+        boolean isEnabled = true;
+
+        // 2. 处理普通用户（复制 userId 等字段）
         if (user instanceof User) {
             User normalUser = (User) user;
+            // 关键：复制 userId（避免 getUserId() 为 null）
+            jwtAuthUser.setUserId(normalUser.getUserId());
+            // 复制其他必要字段（如 status、role 等）
+            jwtAuthUser.setStatus(normalUser.getStatus());
+            jwtAuthUser.setRole(normalUser.getRole());
+            // 校验账号状态
             isEnabled = normalUser.getStatus() != null && normalUser.getStatus() == 0;
-            if (!isEnabled) {
-                String statusMsg = normalUser.getStatus() == 1 ? "已冻结" : "已注销";
-                logger.error("普通用户认证失败：用户名[{}]账号{}", username, statusMsg);
-                throw new UsernameNotFoundException("账号" + statusMsg + "，请联系管理员");
-            }
         }
-        // 转换角色编码为 Security 权限
-        List<GrantedAuthority> authorities = getAuthorities(roleCode);
+        // 3. 处理超级用户（若超级用户也需要 userId，可自定义逻辑）
+        else if (user instanceof SuperUser) {
+            SuperUser superUser = (SuperUser) user;
+            // 示例：超级用户无 userId，可将 sid 转为 ObjectId 作为 userId
+            jwtAuthUser.setUserId(new ObjectId(superUser.getSid().toString()));
+            jwtAuthUser.setStatus(0); // 超级用户默认正常状态
+        }
 
-        // 构建标准 UserDetails 对象
-        return new org.springframework.security.core.userdetails.User(
-                username,          // 认证用的用户名/账号
-                password,          // 数据库中加密后的密码（BCrypt）
-                isEnabled,         // 账号是否启用
-                true,              // 账号是否未过期
-                true,              // 密码是否未过期
-                true,              // 账号是否未锁定
-                authorities        // 用户权限列表
-        );
+        // 4. 校验密码
+        if (!StringUtils.hasText(password)) {
+            throw new UsernameNotFoundException("账号异常，密码未设置");
+        }
+
+        // 5. 设置权限（复用原逻辑）
+        jwtAuthUser.setAuthorities(getAuthorities(roleCode));
+
+        // 返回 JwtAuthUser 实例，而非内置 User
+        return jwtAuthUser;
     }
-
     /**
      * 转换角色编码为 Security 权限（与业务角色枚举对齐）
      */
@@ -109,15 +114,15 @@ public class UserDetailsServiceImpl implements UserDetailsService {
         }
 
         switch (roleCode) {
-            case "0":  // 超级管理员（ADMIN）
+            case "admin":  // 超级管理员（ADMIN）
                 authorities.add(new SimpleGrantedAuthority("ROLE_ADMIN"));
                 // 可选：超级管理员自动拥有客服权限
                 authorities.add(new SimpleGrantedAuthority("ROLE_CUSTOMER_SERVICE"));
                 break;
-            case "1":  // 客服（CUSTOMER_SERVICE）
+            case "customer_service":  // 客服（CUSTOMER_SERVICE）
                 authorities.add(new SimpleGrantedAuthority("ROLE_CUSTOMER_SERVICE"));
                 break;
-            case "2":  // 普通用户（BUYER）
+            case "buyer":  // 普通用户（BUYER）
                 authorities.add(new SimpleGrantedAuthority("ROLE_USER"));
                 break;
             default:   // 未知角色默认普通用户

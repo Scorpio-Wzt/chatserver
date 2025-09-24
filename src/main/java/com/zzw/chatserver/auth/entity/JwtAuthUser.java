@@ -9,14 +9,23 @@ import java.util.Collection;
 
 //封装了用户信息，用于认证和鉴权。
 public class JwtAuthUser extends User implements UserDetails {
+    private Collection<? extends GrantedAuthority> authorities;
+
+    // 继承父类的 userId 字段（来自 User 实体）
+
+    @Override
+    public Collection<? extends GrantedAuthority> getAuthorities() {
+        // 若未设置权限，返回空列表而非 null
+        return authorities != null ? authorities : new ArrayList<>();
+    }
+
+    public void setAuthorities(Collection<? extends GrantedAuthority> authorities) {
+        this.authorities = authorities;
+    }
 
     public JwtAuthUser() {
     }
 
-    @Override
-    public Collection<? extends GrantedAuthority> getAuthorities() {
-        return new ArrayList<>();
-    }
 
     @Override
     public String getPassword() {

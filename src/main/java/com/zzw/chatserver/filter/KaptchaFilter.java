@@ -30,14 +30,14 @@ public class KaptchaFilter extends GenericFilter {
         String requestURI = req.getServletPath();
         String method = req.getMethod();
 
-        // 1. 登录接口（/chat/user/login）直接放行，不校验验证码
-        if ("POST".equals(method) && "/chat/user/login".equals(requestURI)) {
-            filterChain.doFilter(req, resp); // 用filterChain传递请求，而非super
+        // 1. 登录接口（/chat/user/register）直接放行，不校验验证码
+        if ("POST".equals(method) && "/user/register".equals(requestURI)) {
+            filterChain.doFilter(req, resp);
             return;
         }
 
-        // 2. 对普通登录（/user/login）和注册（/user/register）校验验证码
-        if ("POST".equals(method) && ("/user/login".equals(requestURI) || "/user/register".equals(requestURI))) {
+        // 2. 对普通登录（/user/login) 校验验证码
+        if ("POST".equals(method) && ("/user/login".equals(requestURI))) {
             String kaptchaOwner = CookieUtil.getValue(req, "kaptchaOwner");
             ServletRequest requestWrapper = new HttpServletRequestReplacedWrapper(req); // 包装请求体
             String cvCode = HttpServletRequestUtil.getBodyTxt(requestWrapper, "cvCode");

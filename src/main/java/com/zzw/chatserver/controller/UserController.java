@@ -40,6 +40,8 @@ public class UserController {
     @Resource
     private RedisTemplate<String, String> redisTemplate;
 
+
+
     /**
      * 获取验证码
      */

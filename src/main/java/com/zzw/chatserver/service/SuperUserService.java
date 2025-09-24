@@ -1,6 +1,9 @@
 package com.zzw.chatserver.service;
 
 import com.zzw.chatserver.pojo.SuperUser;
+import com.zzw.chatserver.pojo.User;
+import com.zzw.chatserver.pojo.vo.RegisterRequestVo;
+import org.bson.types.ObjectId;
 
 import java.util.Map;
 
@@ -9,6 +12,13 @@ import java.util.Map;
  * 定义超级用户的创建、校验、登录等核心操作（含账号存在性校验、密码加密存储、JWT令牌生成等）
  */
 public interface SuperUserService {
+
+    /**
+     * 根据sid查询超级管理员
+     * @param sid
+     * @return
+     */
+    SuperUser findBySid(ObjectId sid);
 
     /**
      * 账号不存在时新增超级用户（避免重复创建）

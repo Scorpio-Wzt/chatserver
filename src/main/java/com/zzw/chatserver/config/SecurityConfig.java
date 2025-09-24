@@ -70,15 +70,15 @@ public class SecurityConfig{
     @Bean
     public WebSecurityCustomizer webSecurityCustomizer() {
         return (web) -> web.ignoring().antMatchers(
-                "/user/getCode",
+                "/user/getCode",  // 保留：获取验证码无需过滤
                 "/sys/getFaceImages",
-                "/user/register",
                 "/sys/downloadFile",
                 "/swagger-resources/**",
                 "/webjars/**",
                 "/v2/**",
                 "/swagger-ui.html/**",
-                "/superuser/login"
+                "/superuser/login",
+                "/user/register"
         );
     }
 
@@ -95,7 +95,7 @@ public class SecurityConfig{
                 // 4. 认证请求规则（保持原有）
                 .authorizeRequests()
                     // 放行静态资源和登录接口
-                    .antMatchers("/chat/user/login").permitAll()
+                    .antMatchers("/user/login").permitAll()
                     .antMatchers("/expression/**", "/face/**", "/img/**", "/uploads/**").permitAll()
                     // 其他所有请求需认证
                     .anyRequest().authenticated()
@@ -120,7 +120,8 @@ public class SecurityConfig{
                         new JwtLoginAuthFilter(
                                 authenticationManager(authConfig), // 注入认证管理器
                                 mongoTemplate,
-                                onlineUserService
+                                onlineUserService,
+                                jwtUtils
                         ),
                         UsernamePasswordAuthenticationFilter.class
                 )

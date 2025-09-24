@@ -9,7 +9,8 @@ import java.util.Arrays;
 @AllArgsConstructor
 public enum UserRoleEnum {
     BUYER("buyer", "普通用户"),
-    CUSTOMER_SERVICE("customer_service", "客服");
+    CUSTOMER_SERVICE("customer_service", "客服"),
+    ADMIN("admin","管理员");
 
     private final String code;
     private final String desc;
@@ -30,5 +31,10 @@ public enum UserRoleEnum {
     // 检查是否为普通用户角色
     public boolean isCustomer() {
         return BUYER.code.equals(this.code);
+    }
+
+    // 检查是否为管理员用户角色
+    public boolean isAdmin() {
+        return ADMIN.code.equals(this.code);
     }
 }

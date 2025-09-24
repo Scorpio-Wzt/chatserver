@@ -13,9 +13,9 @@ import java.util.Map;
 public interface UserService {
 
     /**
-     * 根据用户名查询用户（用于 UserDetailsServiceImpl 加载用户）
-     * @param username 登录用户名
-     * @return 完整的 User 实体（包含 username、password、role、status 等字段）
+     *
+     * @param username
+     * @return
      */
     User findUserByUsername(String username);
 

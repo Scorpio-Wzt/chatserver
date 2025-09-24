@@ -11,6 +11,9 @@ import com.zzw.chatserver.service.OnlineUserService;
 import com.zzw.chatserver.utils.JwtUtils;
 import com.zzw.chatserver.utils.ResponseUtil;
 import com.zzw.chatserver.utils.SocketIoServerMapUtil;
+import org.bson.types.ObjectId;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -31,6 +34,9 @@ import java.util.ArrayList;
 import java.util.Date;
 
 public class JwtLoginAuthFilter extends UsernamePasswordAuthenticationFilter {
+
+    private static final Logger logger = LoggerFactory.getLogger(JwtLoginAuthFilter.class);
+
     private AuthenticationManager authenticationManager;
 
     private MongoTemplate mongoTemplate;
@@ -38,15 +44,21 @@ public class JwtLoginAuthFilter extends UsernamePasswordAuthenticationFilter {
     private OnlineUserService onlineUserService;
 
     @Resource
-    private JwtUtils jwtUtils;
+    private final JwtUtils jwtUtils;
+
+    // 在JwtLoginAuthFilter中增加成员变量存储登录参数
+    private ThreadLocal<LoginRequestVo> loginRequestVoThreadLocal = new ThreadLocal<>();
 
     // 构造器参数：AuthenticationManager + 其他业务依赖
-    public JwtLoginAuthFilter(AuthenticationManager authenticationManager, MongoTemplate mongoTemplate, OnlineUserService onlineUserService) {
+    public JwtLoginAuthFilter(AuthenticationManager authenticationManager,
+                              MongoTemplate mongoTemplate,
+                              OnlineUserService onlineUserService,
+                              JwtUtils jwtUtils) { // 新增参数
         this.authenticationManager = authenticationManager;
         this.mongoTemplate = mongoTemplate;
         this.onlineUserService = onlineUserService;
-        // 可选：设置登录请求的 URL（默认是 /login，若你的登录接口是 /chat/user/login，需修改）
-        this.setFilterProcessesUrl("/chat/user/login");
+        this.jwtUtils = jwtUtils; // 手动赋值
+        this.setFilterProcessesUrl("/user/login");
     }
 
     //登录验证
@@ -54,60 +66,83 @@ public class JwtLoginAuthFilter extends UsernamePasswordAuthenticationFilter {
     public Authentication attemptAuthentication(HttpServletRequest request, HttpServletResponse response) throws AuthenticationException {
         try {
             LoginRequestVo lvo = new ObjectMapper().readValue(request.getInputStream(), LoginRequestVo.class);
+            loginRequestVoThreadLocal.set(lvo); // 存储到 ThreadLocal
             return authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(lvo.getUsername(), lvo.getPassword(), new ArrayList<>())
             );
         } catch (IOException e) {
-            e.printStackTrace();
-            throw new RuntimeException();
+            logger.error("读取登录参数失败", e);
+            throw new RuntimeException("登录参数解析失败");
         }
     }
 
-    //登录验证成功后调用，验证成功后将生成Token，并重定向到用户主页home
+    //登录验证成功后调用，生成Token并返回结果
+// 修改 JwtLoginAuthFilter 的 successfulAuthentication 方法
     @Override
     protected void successfulAuthentication(HttpServletRequest request,
                                             HttpServletResponse response,
                                             FilterChain chain,
                                             Authentication authResult) throws IOException, ServletException {
         try {
-            //这里可以再次使用request
-            LoginRequestVo lvo = new ObjectMapper().readValue(request.getInputStream(), LoginRequestVo.class);
-            // System.out.println("验证成功后========================================登录请求参数为：" + lvo);
-            //查看源代码会发现调用getPrincipal()方法会返回一个实现了`UserDetails`接口的对象，这里是JwtAuthUser
-            JwtAuthUser jwtUser = (JwtAuthUser) authResult.getPrincipal();
-            // System.out.println("JwtAuthUser：" + jwtUser.toString());
-            //================================在这里对账号进行判别=========
-            if (jwtUser.getStatus() == 1 || jwtUser.getStatus() == 2)
-                ResponseUtil.out(response, R.error().resultEnum(ResultEnum.ACCOUNT_IS_FROZEN_OR_CANCELLED));
-            /*else if (SocketIoServerMapUtil.getUidToUserMap().containsKey(jwtUser.getUserId().toString())) //用户已经在别处登录了
-                ResponseUtil.out(response, R.error().resultEnum(ResultEnum.USER_HAS_LOGGED));*/
-            else if (onlineUserService.checkCurUserIsOnline(jwtUser.getUserId().toString())) //用户已经在别处登录了
-                ResponseUtil.out(response, R.error().resultEnum(ResultEnum.USER_HAS_LOGGED));
-            else { //用户通过验证
-                Query query = new Query();
-                query.addCriteria(new Criteria().orOperator(Criteria.where("username").is(jwtUser.getUsername()),
-                        Criteria.where("code").is(jwtUser.getUsername())));
-                Update update = new Update();
-                update.set("lastLoginTime", new Date());
-                update.set("loginSetting", lvo.getSetting());
-                //设置一下uid
-                update.set("uid", jwtUser.getUserId().toString());
-                // System.out.println("当前登录用户的uid为：" + jwtUser.getUserId().toString());
-                jwtUser.setLastLoginTime(new Date());
-                jwtUser.setLoginSetting(lvo.getSetting());
-                jwtUser.setUid(jwtUser.getUserId().toString());
-                UpdateResult updateResult = mongoTemplate.upsert(query, update, User.class);
-                // System.out.println("更新用户表是否成功？" + updateResult);
-                //生成token
-                String token = jwtUtils.createJwt(jwtUser.getUserId().toString(), jwtUser.getUsername());
-                ResponseUtil.out(response, R.ok().resultEnum(ResultEnum.LOGIN_SUCCESS).data("token", token).data("userInfo", jwtUser));
+            // 1. 读取登录参数（修复 InputStream 重复读取问题，改用 ThreadLocal）
+            LoginRequestVo lvo = loginRequestVoThreadLocal.get(); // 需提前在 attemptAuthentication 中存入
+            if (lvo == null) {
+                ResponseUtil.out(response, R.error().resultEnum(ResultEnum.SYSTEM_ERROR));
+                return;
             }
-        } catch (IOException e) {
-            e.printStackTrace();
+
+            // 2. 获取认证用户（此时已为 JwtAuthUser 类型）
+            JwtAuthUser jwtUser = (JwtAuthUser) authResult.getPrincipal();
+            if (jwtUser == null) {
+                ResponseUtil.out(response, R.error().resultEnum(ResultEnum.USER_LOGIN_FAILED));
+                return;
+            }
+
+            // 3. 检查 userId 是否为 null（关键防御）
+            ObjectId userId = jwtUser.getUserId();
+            if (userId == null) {
+                logger.error("用户ID为null，登录失败");
+                ResponseUtil.out(response, R.error().resultEnum(ResultEnum.USER_LOGIN_FAILED));
+                return;
+            }
+
+            // 4. 后续逻辑（使用 userId 时确保非 null）
+            if (jwtUser.getStatus() == 1 || jwtUser.getStatus() == 2) {
+                ResponseUtil.out(response, R.error().resultEnum(ResultEnum.ACCOUNT_IS_FROZEN_OR_CANCELLED));
+                return;
+            }
+            if (onlineUserService.checkCurUserIsOnline(userId.toString())) {
+                ResponseUtil.out(response, R.error().resultEnum(ResultEnum.USER_HAS_LOGGED));
+                return;
+            }
+
+            // 更新用户信息（使用非 null 的 userId）
+            Query query = new Query();
+            query.addCriteria(new Criteria().orOperator(
+                    Criteria.where("username").is(jwtUser.getUsername()),
+                    Criteria.where("code").is(jwtUser.getUsername())
+            ));
+            Update update = new Update();
+            update.set("lastLoginTime", new Date());
+            update.set("loginSetting", lvo.getSetting());
+            update.set("uid", userId.toString()); // 此处已确保 userId 非 null
+
+            // 生成 token（使用非 null 的 userId）
+            String token = jwtUtils.createJwt(userId.toString(), jwtUser.getUsername());
+            ResponseUtil.out(response, R.ok()
+                    .resultEnum(ResultEnum.LOGIN_SUCCESS)
+                    .data("token", token)
+                    .data("userInfo", jwtUser));
+
+        } catch (Exception e) {
+            logger.error("登录成功处理异常", e);
+            ResponseUtil.out(response, R.error().resultEnum(ResultEnum.SYSTEM_ERROR));
+        } finally {
+            // 清除 ThreadLocal，避免内存泄漏
+            loginRequestVoThreadLocal.remove();
         }
     }
-
-    //登录验证失败后调用，这里直接Json返回，实际上可以重定向到错误界面等
+    //登录验证失败后调用
     @Override
     protected void unsuccessfulAuthentication(HttpServletRequest request,
                                               HttpServletResponse response,
