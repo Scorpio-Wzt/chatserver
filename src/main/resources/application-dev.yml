@@ -24,18 +24,15 @@ socketio:
   upgradeTimeout: 10000
   pingTimeout: 60000
   pingInterval: 25000
-  maxHttpContentLength: 1048576
-  maxFramePayloadLength: 1048576
+  maxHttpContentLength: 1448576
+  maxFramePayloadLength: 1448576
 server:
   servlet:
     context-path: /chat
   port: 5555
   ssl:
     enabled: false  # 禁用 SSL
-#fastdfs:
-#  nginx:
-#    host: https://xxxxx/ # 更换为自己的域名
-# 替换原fastdfs配置
+
 minio:
   endpoint: http://localhost:9005  # Windows本地MinIO地址
   fileHost: http://localhost:9005

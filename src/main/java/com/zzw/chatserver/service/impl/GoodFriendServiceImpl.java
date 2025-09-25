@@ -1,15 +1,12 @@
 package com.zzw.chatserver.service.impl;
 
+import com.zzw.chatserver.common.ResultEnum;
+import com.zzw.chatserver.common.exception.BusinessException;
 import com.zzw.chatserver.dao.GoodFriendDao;
 import com.zzw.chatserver.dao.UserDao;
 import com.zzw.chatserver.pojo.GoodFriend;
 import com.zzw.chatserver.pojo.User;
-import com.zzw.chatserver.pojo.vo.DelGoodFriendRequestVo;
-import com.zzw.chatserver.pojo.vo.MyFriendListResultVo;
-import com.zzw.chatserver.pojo.vo.MyFriendListVo;
-import com.zzw.chatserver.pojo.vo.RecentConversationVo;
-import com.zzw.chatserver.pojo.vo.SingleRecentConversationResultVo;
-import com.zzw.chatserver.pojo.vo.SimpleUser;
+import com.zzw.chatserver.pojo.vo.*;
 import com.zzw.chatserver.service.GoodFriendService;
 import com.zzw.chatserver.service.UserService;
 import com.zzw.chatserver.utils.DateUtil;
@@ -18,8 +15,11 @@ import org.bson.types.ObjectId;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.BeanUtils;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.aggregation.Aggregation;
+import org.springframework.data.mongodb.core.aggregation.AggregationResults;
+import org.springframework.data.mongodb.core.aggregation.ConditionalOperators;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
@@ -52,6 +52,112 @@ public class GoodFriendServiceImpl implements GoodFriendService {
     private UserService userService;
 
 
+    @Override
+    public List<SingleRecentConversationResultVo> getRecentChatFriends(RecentConversationVo recentConversationVo) {
+        // 1. 参数校验与处理
+        String currentUserId = recentConversationVo.getUserId();
+        if (currentUserId == null || !ObjectId.isValid(currentUserId)) {
+            throw new BusinessException(ResultEnum.INVALID_USER_ID, "用户ID格式错误");
+        }
+        ObjectId currentUserObjId = new ObjectId(currentUserId);
+
+        // 处理maxCount参数（核心控制：允许0，默认20条）
+        Integer maxCount = recentConversationVo.getMaxCount();
+        // 防御性处理：null→默认20条，<0→0，>100→100（避免查询过多）
+        int actualMaxCount = (maxCount == null) ? 20 : Math.max(0, Math.min(maxCount, 100));
+
+        // 若maxCount=0，直接返回空列表
+        if (actualMaxCount == 0) {
+            return new ArrayList<>();
+        }
+        // 聚合查询
+        Aggregation aggregation = Aggregation.newAggregation(
+                // 筛选当前用户参与的消息
+                Aggregation.match(
+                        Criteria.where("senderId").is(currentUserObjId)
+                                .orOperator(Criteria.where("receiverId").is(currentUserObjId))
+                ),
+                // 步骤1：新增对方用户ID字段（otherSideId）
+                Aggregation.addFields()
+                        .addField("otherSideId")
+                        .withValue(
+                                ConditionalOperators.when(Criteria.where("senderId").is(currentUserObjId))
+                                        .then("receiverId")
+                                        .otherwise("senderId")
+                        )
+                        .build(),
+                // 步骤2：新增临时字段（targetFriendField）存储动态关联的字段名
+                Aggregation.addFields()
+                        .addField("targetFriendField")
+                        .withValue(
+                                // 根据当前用户ID判断好友表中要关联的字段是userY还是userM
+                                ConditionalOperators.when(Criteria.where("userM").is(currentUserObjId))
+                                        .then("userY")  // 当前用户是userM → 关联userY
+                                        .otherwise("userM")  // 否则关联userM
+                        )
+                        .build(),
+                // 按对方ID分组，取最后一条消息
+                Aggregation.group("otherSideId")
+                        .first("otherSideId").as("otherSideId")
+                        .max("sendTime").as("lastMsgTime")
+                        .first("content").as("lastMsgContent"),
+                // 按最后消息时间倒序
+                Aggregation.sort(Sort.Direction.DESC, "lastMsgTime"),
+                // 限制最大返回数量
+                Aggregation.limit(actualMaxCount),
+                // 关联用户表（正常关联）
+                Aggregation.lookup("users", "otherSideId", "_id", "otherUserInfo"),
+                // 步骤3：关联好友表 → 使用临时字段targetFriendField（字符串类型）
+                Aggregation.lookup(
+                        "goodfriends",       // 关联的集合名
+                        "otherSideId",       // 本地字段（当前结果中的对方ID）
+                        "targetFriendField", // 引用临时字段（存储动态字段名，字符串类型）
+                        "friendRelation"     // 结果存储字段
+                ),
+                // 仅保留好友记录
+                Aggregation.match(Criteria.where("friendRelation").not().size(0))
+        );
+
+        // 执行查询
+        AggregationResults<RecentChatFriendGroupVo> results = mongoTemplate.aggregate(
+                aggregation, "message", RecentChatFriendGroupVo.class
+        );
+        List<RecentChatFriendGroupVo> groupVos = results.getMappedResults();
+
+        // 3. 转换结果（无需分页处理，直接映射）
+        List<SingleRecentConversationResultVo> resultList = new ArrayList<>();
+        for (RecentChatFriendGroupVo group : groupVos) {
+            if (group.getOtherUserInfo() == null || group.getOtherUserInfo().isEmpty()) {
+                continue;
+            }
+            User otherUser = group.getOtherUserInfo().get(0);
+
+            SingleRecentConversationResultVo vo = new SingleRecentConversationResultVo();
+            vo.setId(group.getOtherSideId().toString());
+            vo.setLastMsgContent(group.getLastMsgContent());
+            vo.setLastMsgTime(DateUtil.format(new Date(group.getLastMsgTime()), DateUtil.yyyy_MM_dd_HH_mm_ss));
+            vo.setIsFriend(true);
+
+            // 设置用户信息
+            SimpleUser currentUser = new SimpleUser();
+            currentUser.setUid(currentUserId);
+            // currentUser.setNickname(...); // 补充当前用户信息
+
+            SimpleUser otherSideUser = new SimpleUser();
+            otherSideUser.setUid(otherUser.getUid());
+            otherSideUser.setNickname(otherUser.getNickname());
+            otherSideUser.setPhoto(otherUser.getPhoto());
+            otherSideUser.setLevel(computedLevel(otherUser.getOnlineTime()));
+
+            vo.setUserM(currentUser);
+            vo.setUserY(otherSideUser);
+
+            resultList.add(vo);
+        }
+
+        return resultList;
+    }
+
     /**
      * 获取当前用户的好友列表
      * 聚合查询好友关系表与用户表，返回包含好友信息、等级、房间ID的列表
@@ -79,82 +185,6 @@ public class GoodFriendServiceImpl implements GoodFriendService {
         resList.addAll(convertToFriendResultVo(results2, userId, false)); // 接收方好友
         return resList;
     }
-
-    /**
-     * 获取当前用户的最近好友会话列表
-     * 聚合查询符合条件的好友关系，返回包含会话双方信息的列表
-     */
-    @Override
-    public List<SingleRecentConversationResultVo> getRecentConversation(RecentConversationVo recentConversationVo) {
-        // 转换好友ID列表为ObjectId格式
-        List<ObjectId> friendIds = new ArrayList<>();
-        for (String son : recentConversationVo.getRecentFriendIds()) {
-            friendIds.add(new ObjectId(son));
-        }
-
-        // 构建查询条件：当前用户与最近好友的双向关系
-        Criteria criteriaA = Criteria.where("userM").in(friendIds).and("userY").is(new ObjectId(recentConversationVo.getUserId()));
-        Criteria criteriaB = Criteria.where("userY").in(friendIds).and("userM").is(new ObjectId(recentConversationVo.getUserId()));
-        Criteria criteria = new Criteria().orOperator(criteriaA, criteriaB);
-
-        // 聚合查询：关联用户表获取双方信息
-        Aggregation aggregation = Aggregation.newAggregation(
-                Aggregation.match(criteria),
-                Aggregation.lookup("users", "userY", "_id", "uList1"),
-                Aggregation.lookup("users", "userM", "_id", "uList2")
-        );
-        List<MyFriendListVo> friendlies = mongoTemplate.aggregate(aggregation, "goodfriends", MyFriendListVo.class).getMappedResults();
-
-        // 转换为最近会话VO列表
-        List<SingleRecentConversationResultVo> resultVoList = new ArrayList<>();
-        for (MyFriendListVo son : friendlies) {
-            SingleRecentConversationResultVo item = new SingleRecentConversationResultVo();
-            // 格式化创建时间
-            item.setCreateDate(DateUtil.format(son.getCreateDate(), DateUtil.yyyy_MM_dd_HH_mm_ss));
-            item.setId(son.getId());
-
-            // 构建会话双方用户信息（保持好友关系原始顺序）
-            SimpleUser userM = new SimpleUser();
-            SimpleUser userY = new SimpleUser();
-            if (son.getUList1().get(0).getUid().equals(son.getUserM())) {
-                BeanUtils.copyProperties(son.getUList1().get(0), userM);
-                BeanUtils.copyProperties(son.getUList2().get(0), userY);
-            } else {
-                BeanUtils.copyProperties(son.getUList1().get(0), userY);
-                BeanUtils.copyProperties(son.getUList2().get(0), userM);
-            }
-
-            // 设置用户等级并添加到结果列表
-            item.setUserM(userM);
-            item.setUserY(userY);
-            item.getUserM().setLevel(computedLevel(son.getUList1().get(0).getOnlineTime()));
-            item.getUserY().setLevel(computedLevel(son.getUList2().get(0).getOnlineTime()));
-            resultVoList.add(item);
-        }
-        return resultVoList;
-    }
-
-//    /**
-//     * 添加好友
-//     * 校验好友关系是否已存在，不存在则保存，并将双方添加到"我的好友"分组
-//     */
-//    @Override
-//    public void addFriend(GoodFriend goodFriend) {
-//        // 校验好友关系是否已存在
-//        Query query = Query.query(
-//                Criteria.where("userM").is(goodFriend.getUserM())
-//                        .and("userY").is(goodFriend.getUserY())
-//        );
-//        GoodFriend existingFriend = mongoTemplate.findOne(query, GoodFriend.class);
-//
-//        // 不存在则保存，并更新双方分组
-//        if (existingFriend == null) {
-//            goodFriendDao.save(goodFriend);
-//            // 双向添加到"我的好友"分组
-//            modifyNewUserFenZu(goodFriend.getUserM().toString(), goodFriend.getUserY().toString());
-//            modifyNewUserFenZu(goodFriend.getUserY().toString(), goodFriend.getUserM().toString());
-//        }
-//    }
 
     /**
      * 添加好友（补充双向关系）

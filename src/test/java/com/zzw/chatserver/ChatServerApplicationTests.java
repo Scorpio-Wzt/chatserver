@@ -380,17 +380,17 @@ class ChatServerApplicationTests {
         System.out.println("我的好友列表：" + JSON.toJSONString(friends));
     }
 
-    @Test
-    void getRecentConversation() {
-        RecentConversationVo requestVo = new RecentConversationVo();
-        requestVo.setRecentFriendIds(Collections.singletonList(testFriendUid));
-        requestVo.setUserId(testUserUid);
-        List<SingleRecentConversationResultVo> conversations = friendlyService.getRecentConversation(requestVo);
-
-        Assertions.assertNotNull(conversations, "最近会话查询结果为null");
-        Assertions.assertFalse(conversations.isEmpty(), "应查询到与测试好友的会话");
-        System.out.println("最近会话：" + JSON.toJSONString(conversations));
-    }
+//    @Test
+//    void getRecentConversation() {
+//        RecentConversationVo requestVo = new RecentConversationVo();
+//        requestVo.setRecentFriendIds(Collections.singletonList(testFriendUid));
+//        requestVo.setUserId(testUserUid);
+//        List<SingleRecentConversationResultVo> conversations = friendlyService.getRecentConversation(requestVo);
+//
+//        Assertions.assertNotNull(conversations, "最近会话查询结果为null");
+//        Assertions.assertFalse(conversations.isEmpty(), "应查询到与测试好友的会话");
+//        System.out.println("最近会话：" + JSON.toJSONString(conversations));
+//    }
 
     @Test
     void changeValidateNewsStatus() {

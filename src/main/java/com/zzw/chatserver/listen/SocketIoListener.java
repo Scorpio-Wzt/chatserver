@@ -678,6 +678,13 @@ public class SocketIoListener {
         if (StringUtils.isEmpty(originalMsg)) {
             return;
         }
+        // ========== 判断消息类型，图片类型跳过敏感词过滤 ==========
+        if ("img".equals(newMessageVo.getMessageType())) {
+            // 图片消息仍需XSS防御（防止URL包含恶意脚本），但跳过敏感词过滤
+            String escapedMsg = HtmlUtils.htmlEscape(originalMsg);
+            newMessageVo.setMessage(escapedMsg);
+            return;
+        }
         // XSS防御：HTML特殊字符转义
         String escapedMsg = HtmlUtils.htmlEscape(originalMsg);
         newMessageVo.setMessage(escapedMsg);

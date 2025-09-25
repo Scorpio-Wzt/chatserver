@@ -12,6 +12,13 @@ import java.util.Map;
  */
 public interface UserService {
 
+
+    /**
+     * 获取当前登录用户的ID（uid或超级管理员sid的字符串形式）
+     * @return 当前登录用户ID，未登录或认证失败时返回null
+     */
+    String getCurrentUserId();
+
     /**
      *
      * @param username

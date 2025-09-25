@@ -38,6 +38,28 @@ public class GroupUserServiceImpl implements GroupUserService {
     private GroupMessageDao groupMessageDao;
 
     /**
+     * 检查用户是否为群成员：查询group_user关联表中是否存在匹配记录
+     */
+    @Override
+    public boolean isGroupMember(String groupId, String userId) {
+        // 参数校验（防御性编程）
+        if (groupId == null || userId == null
+                || !ObjectId.isValid(groupId)
+                || !ObjectId.isValid(userId)) {
+            return false; // 无效ID直接返回非成员
+        }
+
+        // 查询群成员关系
+        GroupUser groupUser = groupUserDao.findGroupUserByUserIdAndGroupId(
+                new ObjectId(groupId),
+                new ObjectId(userId)
+        );
+
+        // 存在记录则为群成员
+        return groupUser != null;
+    }
+
+    /**
      * 根据用户名查询该用户加入的所有群组
      */
     @Override

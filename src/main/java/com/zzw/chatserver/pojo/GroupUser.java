@@ -17,6 +17,7 @@ public class GroupUser {
     private ObjectId groupId;
     private ObjectId userId; //成员id
     private String username; //成员账号名
+    private String userNickname; // 用户名（冗余存储，便于查询）
     private Integer manager = 0; // 是否是管理员，默认0，不是，1是（可以设置一下这个需求）
     private Integer holder = 0;  // 是否是群主，默认0，不是，1是
     private String card = "";  // 群名片

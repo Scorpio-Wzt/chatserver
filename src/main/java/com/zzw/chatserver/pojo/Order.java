@@ -32,7 +32,7 @@ public class Order {
 
     private Double amount;           // 订单金额
 
-    private Integer status;          // 订单状态：0-待支付 1-已支付 2-退款中 3-已退款
+    private Integer status;          // 订单状态：0-待支付 1-已支付 2-退款中 3-已退款 4-已签收
 
     private Date createTime;         // 创建时间
 

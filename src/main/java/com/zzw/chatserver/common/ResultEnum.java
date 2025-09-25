@@ -31,6 +31,7 @@ public enum ResultEnum {
     PERMISSION_DENIED(403, "权限不足，仅超级管理员可操作"),
     PARAM_ERROR(400, "参数错误"), // 参数错误枚举项,
     INVALID_USER_ID(1007, "无效的用户ID（需为24位有效的ObjectId）"),
+    INVALID_GROUP_ID(10002, "群聊ID格式错误"),
     INVALID_FIELD(1008, "不支持的字段名"),
     ERROR_SETTING_PHONE(1009, "手机号格式错误（需为11位有效数字）"),
     ERROR_SETTING_IDCARD(1010, "身份证号格式错误（需为18位有效证件号）"),

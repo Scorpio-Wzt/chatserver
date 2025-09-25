@@ -13,9 +13,11 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.security.access.expression.method.DefaultMethodSecurityExpressionHandler;
+import org.springframework.security.access.expression.method.MethodSecurityExpressionHandler;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
-import org.springframework.security.config.annotation.method.configuration.EnableGlobalMethodSecurity;
+import org.springframework.security.config.annotation.method.configuration.EnableGlobalMethodSecurity; // 旧版注解
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configuration.WebSecurityCustomizer;
@@ -28,16 +30,11 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 
 import javax.annotation.Resource;
-import javax.servlet.FilterChain;
-import javax.servlet.ServletException;
-import javax.servlet.ServletRequest;
-import javax.servlet.ServletResponse;
-import javax.servlet.http.HttpServletRequest;
-import java.io.IOException;
 
 @Configuration
 @EnableWebSecurity
-@EnableGlobalMethodSecurity(prePostEnabled = true)
+// 旧版注解：开启方法级权限（兼容Spring Security 5.6以下版本）
+@EnableGlobalMethodSecurity(prePostEnabled = true) // 核心：开启@PreAuthorize注解
 public class SecurityConfig{
 
     @Autowired
@@ -62,7 +59,11 @@ public class SecurityConfig{
     @Autowired
     private UnAuthEntryPoint unAuthEntryPoint;
 
-    // 配置认证管理器（用于登录过滤器）
+    @Bean
+    public BCryptPasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
+
     @Bean
     public AuthenticationManager authenticationManager(AuthenticationConfiguration authConfig) throws Exception {
         return authConfig.getAuthenticationManager();
@@ -71,7 +72,7 @@ public class SecurityConfig{
     @Bean
     public WebSecurityCustomizer webSecurityCustomizer() {
         return (web) -> web.ignoring().antMatchers(
-                "/user/getCode",  // 保留：获取验证码无需过滤
+                "/user/getCode",
                 "/sys/getFaceImages",
                 "/sys/downloadFile",
                 "/swagger-resources/**",
@@ -87,48 +88,49 @@ public class SecurityConfig{
     public SecurityFilterChain securityFilterChain(HttpSecurity http,
                                                    AuthenticationConfiguration authConfig) throws Exception {
         http
-                // 1. 跨域配置（保持原有）
                 .cors().and()
-                // 2. 关闭CSRF（JWT无状态，无需CSRF保护）
                 .csrf().disable()
-                // 3. 关闭Session（JWT无状态，不依赖Session）
                 .sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS).and()
-                // 4. 认证请求规则（保持原有）
                 .authorizeRequests()
-                    // 放行静态资源和登录接口
-                    .antMatchers("/user/login").permitAll()
-                    .antMatchers("/expression/**", "/face/**", "/img/**", "/uploads/**").permitAll()
-                    // 其他所有请求需认证
-                    .anyRequest().authenticated()
+                .antMatchers("/user/login").permitAll()
+                .antMatchers("/expression/**", "/face/**", "/img/**", "/uploads/**").permitAll()
+                .anyRequest().authenticated()
                 .and()
-                // 5. 退出登录配置（保持原有）
                 .logout()
-                    .logoutRequestMatcher(new AntPathRequestMatcher("/logout", "POST"))
-                    .logoutSuccessHandler(chatLogoutSuccessHandler)
-                    .permitAll()
+                .logoutRequestMatcher(new AntPathRequestMatcher("/logout", "POST"))
+                .logoutSuccessHandler(chatLogoutSuccessHandler)
+                .permitAll()
                 .and()
-                // 验证码过滤器：只拦截需要验证码的请求（如普通注册），排除登录请求（避免消耗InputStream）
                 .addFilterBefore(
-                        new KaptchaFilter(redisTemplate), // 使用修正后的KaptchaFilter（已排除登录接口）
+                        new KaptchaFilter(redisTemplate),
                         UsernamePasswordAuthenticationFilter.class
                 )
                 .addFilterBefore(
                         new JwtPreAuthFilter(jwtUtils, userDetailsService),
                         UsernamePasswordAuthenticationFilter.class
                 )
-                // 5. 登录过滤器,处理登录请求
                 .addFilterAt(
                         new JwtLoginAuthFilter(
-                                authenticationManager(authConfig), // 注入认证管理器
+                                authenticationManager(authConfig),
                                 mongoTemplate,
                                 onlineUserService,
                                 jwtUtils
                         ),
                         UsernamePasswordAuthenticationFilter.class
                 )
-                // 未认证时的处理（返回JSON而非默认页面）
                 .httpBasic().authenticationEntryPoint(unAuthEntryPoint);
 
         return http.build();
+    }
+
+    // 关键：配置角色前缀（解决@PreAuthorize("hasRole('CUSTOMER_SERVICE')")匹配问题）
+    @Bean
+    public MethodSecurityExpressionHandler methodSecurityExpressionHandler() {
+        DefaultMethodSecurityExpressionHandler handler = new DefaultMethodSecurityExpressionHandler();
+        // 根据你的角色存储格式设置：
+        // 1. 若角色存储为"CUSTOMER_SERVICE"（无前缀）→ 设置为空
+        // 2. 若角色存储为"ROLE_CUSTOMER_SERVICE"（有前缀）→ 保持默认"ROLE_"
+        handler.setDefaultRolePrefix("");
+        return handler;
     }
 }

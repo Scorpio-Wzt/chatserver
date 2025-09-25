@@ -60,6 +60,7 @@ public class UserDetailsServiceImpl implements UserDetailsService {
         logger.error("用户认证失败：用户名/账号[{}]不存在", username);
         throw new UsernameNotFoundException("用户名或密码错误");
     }
+
     /**
      * 通用方法：将普通用户/超级用户转换为 Spring Security 的 UserDetails
      */

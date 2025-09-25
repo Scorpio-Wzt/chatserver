@@ -13,6 +13,14 @@ import java.util.List;
 public interface GroupUserService {
 
     /**
+     * 检查用户是否为指定群聊的成员
+     * @param groupId 群聊ID
+     * @param userId 用户ID
+     * @return true=是群成员，false=非群成员
+     */
+    boolean isGroupMember(String groupId, String userId);
+
+    /**
      * 根据用户名查询该用户加入的所有群组
      * @param username 用户名
      * @return 该用户加入的群组列表VO（含群组基本信息）

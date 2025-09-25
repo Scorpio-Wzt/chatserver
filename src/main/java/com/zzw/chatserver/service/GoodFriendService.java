@@ -15,18 +15,18 @@ import java.util.List;
 public interface GoodFriendService {
 
     /**
+     * 查询最近聊天的好友
+     * @param recentConversationVo
+     * @return
+     */
+    List<SingleRecentConversationResultVo> getRecentChatFriends(RecentConversationVo recentConversationVo);
+
+    /**
      * 获取当前用户的好友列表
      * @param userId 当前用户ID（字符串格式）
      * @return 好友列表VO（包含好友基本信息、等级、单聊房间ID等）
      */
     List<MyFriendListResultVo> getMyFriendsList(String userId);
-
-    /**
-     * 获取当前用户的最近好友会话列表
-     * @param recentConversationVo 最近会话查询参数（包含当前用户ID、最近好友ID列表）
-     * @return 最近会话列表VO（包含会话双方信息、创建时间等）
-     */
-    List<SingleRecentConversationResultVo> getRecentConversation(RecentConversationVo recentConversationVo);
 
     /**
      * 添加好友

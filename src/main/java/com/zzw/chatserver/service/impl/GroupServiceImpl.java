@@ -3,6 +3,8 @@ package com.zzw.chatserver.service.impl;
 import com.mongodb.client.result.DeleteResult;
 import com.mongodb.client.result.UpdateResult;
 import com.zzw.chatserver.common.ConstValueEnum;
+import com.zzw.chatserver.common.ResultEnum;
+import com.zzw.chatserver.common.exception.BusinessException;
 import com.zzw.chatserver.dao.AccountPoolDao;
 import com.zzw.chatserver.dao.GroupDao;
 import com.zzw.chatserver.dao.GroupUserDao;
@@ -15,6 +17,7 @@ import com.zzw.chatserver.pojo.vo.SearchGroupResponseVo;
 import com.zzw.chatserver.pojo.vo.SearchGroupResultVo;
 import com.zzw.chatserver.pojo.vo.SearchRequestVo;
 import com.zzw.chatserver.service.GroupService;
+import org.apache.commons.lang3.StringUtils;
 import org.bson.types.ObjectId;
 import org.springframework.beans.BeanUtils;
 import org.springframework.data.domain.Sort;
@@ -106,39 +109,62 @@ public class GroupServiceImpl implements GroupService {
      * 流程：生成群账号 → 保存群信息 → 保存群主群成员关系 → 更新群ID字段
      */
     @Override
+    @Transactional(rollbackFor = Throwable.class) // 添加事务注解，确保操作原子性
     public String createGroup(CreateGroupRequestVo requestVo) {
-        // 1. 创建群账号（AccountPool），标记为已使用
+        // 1. 参数校验（核心字段非空+格式合法）
+        if (requestVo == null
+                || StringUtils.isEmpty(requestVo.getHolderUserId())
+                || StringUtils.isEmpty(requestVo.getHolderName())) {
+            throw new BusinessException(ResultEnum.PARAM_ERROR, "群主ID或名称不能为空");
+        }
+        if (!ObjectId.isValid(requestVo.getHolderUserId())) {
+            throw new BusinessException(ResultEnum.INVALID_USER_ID, "群主ID格式错误");
+        }
+
+        // 2. 创建群账号（AccountPool），标记为已使用
         AccountPool accountPool = new AccountPool();
         accountPool.setType(2); // 2=群聊账号
-        accountPool.setStatus(1); // 1=已使用（删除/注销时设为0）
-        accountPoolDao.save(accountPool);
+        accountPool.setStatus(1); // 1=已使用
+        AccountPool savedAccount = accountPoolDao.save(accountPool);
+        // 校验账号池保存结果（避免code为null）
+        if (savedAccount.getCode() == null) {
+            throw new BusinessException(ResultEnum.SYSTEM_ERROR, "群聊账号生成失败");
+        }
 
-        // 2. 保存群基本信息
+        // 3. 保存群基本信息
         Group group = new Group();
-        if (requestVo.getTitle() != null) group.setTitle(requestVo.getTitle());
-        if (requestVo.getDesc() != null) group.setDesc(requestVo.getDesc());
-        if (requestVo.getImg() != null) group.setImg(requestVo.getImg());
+        group.setTitle(requestVo.getTitle()); // 允许null（如果业务允许群名称为空）
+        group.setDesc(requestVo.getDesc());
+        group.setImg(requestVo.getImg());
         group.setHolderName(requestVo.getHolderName());
         group.setHolderUserId(new ObjectId(requestVo.getHolderUserId()));
-        // 生成群编号：账号code + 初始值（ConstValueEnum.INITIAL_NUMBER）
-        group.setCode(String.valueOf(accountPool.getCode() + ConstValueEnum.INITIAL_NUMBER));
-        groupDao.save(group);
+        // 生成群编号（确保code是数字类型，避免字符串拼接错误）
+        long groupCodeNum = savedAccount.getCode() + ConstValueEnum.INITIAL_NUMBER;
+        group.setCode(String.valueOf(groupCodeNum));
+        Group savedGroup = groupDao.save(group);
+        // 校验群保存结果（确保groupId已生成）
+        if (savedGroup.getGroupId() == null) {
+            throw new BusinessException(ResultEnum.SYSTEM_ERROR, "群聊信息保存失败");
+        }
 
-        // 3. 保存群主的群成员关系（标记为群主）
+        // 4. 保存群主的群成员关系（标记为群主）
         GroupUser groupUser = new GroupUser();
-        groupUser.setGroupId(group.getGroupId());
-        groupUser.setUserId(group.getHolderUserId());
-        groupUser.setUsername(group.getHolderName());
+        groupUser.setGroupId(savedGroup.getGroupId()); // 使用保存后的groupId
+        groupUser.setUserId(savedGroup.getHolderUserId());
+        groupUser.setUsername(savedGroup.getHolderName());
         groupUser.setHolder(1); // 1=群主
         groupUserDao.save(groupUser);
 
-        // 4. 更新群表中的gid字段（与群ID一致，便于查询）
-        Update update = new Update().set("gid", group.getGroupId().toString());
-        Query query = Query.query(Criteria.where("_id").is(group.getGroupId()));
-        mongoTemplate.upsert(query, update, Group.class);
+        // 5. 若必须冗余gid字段，使用updateFirst更新（而非upsert）
+        if (savedGroup.getGid() == null) {
+            Update update = new Update().set("gid", savedGroup.getGroupId().toString());
+            Query query = Query.query(Criteria.where("_id").is(savedGroup.getGroupId()));
+            // 只更新已存在的记录（前面已save，此处必然存在）
+            mongoTemplate.updateFirst(query, update, Group.class);
+        }
 
         // 返回生成的群编号
-        return group.getCode();
+        return savedGroup.getCode();
     }
 
     /**

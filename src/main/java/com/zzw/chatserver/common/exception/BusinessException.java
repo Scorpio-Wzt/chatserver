@@ -1,5 +1,6 @@
 package com.zzw.chatserver.common.exception;
 
+import com.zzw.chatserver.common.ResultEnum; // 导入ResultEnum
 import java.io.Serializable;
 
 /**
@@ -50,6 +51,27 @@ public class BusinessException extends RuntimeException implements Serializable 
         super(message);
         this.code = code;
         this.message = message;
+    }
+
+    /**
+     * 新增：通过ResultEnum创建异常（使用枚举的错误码和消息）
+     * @param resultEnum 错误枚举（包含code和message）
+     */
+    public BusinessException(ResultEnum resultEnum) {
+        super(resultEnum.getMessage()); // 父类携带枚举的消息
+        this.code = resultEnum.getCode(); // 从枚举获取错误码
+        this.message = resultEnum.getMessage(); // 从枚举获取消息
+    }
+
+    /**
+     * 新增：通过ResultEnum+自定义消息创建异常（使用枚举的错误码，覆盖消息）
+     * @param resultEnum 错误枚举（提供code）
+     * @param message 自定义错误消息（覆盖枚举默认消息）
+     */
+    public BusinessException(ResultEnum resultEnum, String message) {
+        super(message); // 父类携带自定义消息
+        this.code = resultEnum.getCode(); // 从枚举获取错误码
+        this.message = message; // 使用自定义消息
     }
 
     /**
