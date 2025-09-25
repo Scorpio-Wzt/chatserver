@@ -93,4 +93,44 @@ public class ChatServerUtil {
         String RULE_EMAIL = "^\\w+((-\\w+)|(\\.\\w+))*\\@[A-Za-z0-9]+((\\.|-)[A-Za-z0-9]+)*\\.[A-Za-z0-9]+$";
         return Pattern.compile(RULE_EMAIL).matcher(email).matches();
     }
+
+    // 手机号正则表达式：11位数字，以1开头，第二位为3-9，后9位为任意数字
+    private static final Pattern PHONE_PATTERN = Pattern.compile("^1[3-9]\\d{9}$");
+
+    // 身份证号正则表达式：18位，支持最后一位为X/x
+    // 格式说明：6位地址码 + 8位出生日期(yyyyMMdd) + 3位顺序码 + 1位校验码(X/x或数字)
+    private static final Pattern ID_CARD_PATTERN = Pattern.compile(
+            "^[1-9]\\d{5}" +                  // 6位地址码（第一位非0）
+                    "(18|19|20)\\d{2}" +              // 4位年份（18xx-20xx）
+                    "(0[1-9]|1[0-2])" +               // 2位月份（01-12）
+                    "(0[1-9]|[12]\\d|3[01])" +        // 2位日期（01-31）
+                    "\\d{3}" +                        // 3位顺序码
+                    "[0-9Xx]$"                        // 1位校验码（数字或X/x）
+    );
+
+    /**
+     * 校验手机号格式
+     * @param phone 待校验的手机号字符串
+     * @return 格式正确返回true，否则返回false（null或空字符串也返回false）
+     */
+    public static boolean isPhone(String phone) {
+        if (phone == null || phone.trim().isEmpty()) {
+            return false;
+        }
+        // 移除可能的空格后校验
+        return PHONE_PATTERN.matcher(phone.trim()).matches();
+    }
+
+    /**
+     * 校验身份证号格式（基础格式校验，不含校验位算法验证）
+     * @param idCard 待校验的身份证号字符串
+     * @return 格式正确返回true，否则返回false（null或空字符串也返回false）
+     */
+    public static boolean isIDCard(String idCard) {
+        if (idCard == null || idCard.trim().isEmpty()) {
+            return false;
+        }
+        // 移除可能的空格后校验
+        return ID_CARD_PATTERN.matcher(idCard.trim()).matches();
+    }
 }

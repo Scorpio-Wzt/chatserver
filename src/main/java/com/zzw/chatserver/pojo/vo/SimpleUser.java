@@ -18,4 +18,6 @@ public class SimpleUser {
     private Integer level = 0; //默认等级为0
     private Date lastLoginTime;
     private String username;
+    // 最后心跳时间
+    private Date lastHeartbeatTime;
 }

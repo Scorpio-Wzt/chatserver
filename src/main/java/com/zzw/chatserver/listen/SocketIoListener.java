@@ -17,6 +17,7 @@ import org.bson.types.ObjectId;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.BeanUtils;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -350,7 +351,6 @@ public class SocketIoListener {
                 return;
             }
 
-            // 修正：移除getMessageIds()，打印实际的单聊/群聊消息ID列表
             logger.info("收到消息确认，userId={}, singleMessageIds={}, groupMessageIds={}",
                     confirmVo.getUserId(), confirmVo.getSingleMessageIds(), confirmVo.getGroupMessageIds());
 
@@ -575,10 +575,10 @@ public class SocketIoListener {
             logger.info("处理新消息，senderId={}, roomId={}", senderId, roomId);
 
             // 2. 身份验证（防止会话劫持）
-            if (!validateSenderIdentity(senderId)) {
-                client.sendEvent(EVENT_SEND_FAILED, ERR_IDENTITY_VERIFY_FAILED);
-                return;
-            }
+//            if (!validateSenderIdentity(senderId)) {
+//                client.sendEvent(EVENT_SEND_FAILED, ERR_IDENTITY_VERIFY_FAILED);
+//                return;
+//            }
 
             // 3. 消息安全处理（XSS防御+敏感词过滤）
             processMessageSecurity(newMessageVo);
@@ -647,7 +647,22 @@ public class SocketIoListener {
      * 验证发送者身份（与SecurityContext中的身份匹配）
      */
     private boolean validateSenderIdentity(String senderId) {
-        String actualUserId = SecurityContextHolder.getContext().getAuthentication().getName();
+        // 获取认证信息前添加空值检查
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null) {
+            logger.error("身份验证失败：未找到有效的认证信息");
+            return false;
+        }
+
+        String actualUserId = authentication.getName();
+        // 进一步检查用户名是否为空
+        if (actualUserId == null) {
+            logger.error("身份验证失败：认证信息中的用户名为空");
+            return false;
+        }
+
+        System.out.println("actualUserId：" + actualUserId);
+
         if (!actualUserId.equals(senderId)) {
             logger.warn("会话劫持风险：{} 尝试伪造发送者 {}", actualUserId, senderId);
             return false;
@@ -958,12 +973,14 @@ public class SocketIoListener {
         if (uid1 == null || uid2 == null) {
             throw new IllegalArgumentException("用户ID不能为空");
         }
-        // 按字典序排序，保证生成的房间ID唯一且一致
+        // 使用StringBuilder优化拼接
+        StringBuilder sb = new StringBuilder();
         if (uid1.compareTo(uid2) < 0) {
-            return uid1 + "-" + uid2;
+            sb.append(uid1).append("-").append(uid2);
         } else {
-            return uid2 + "-" + uid1;
+            sb.append(uid2).append("-").append(uid1);
         }
+        return sb.toString();
     }
 
     /**

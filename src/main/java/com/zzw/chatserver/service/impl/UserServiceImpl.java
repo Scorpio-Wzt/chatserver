@@ -16,6 +16,7 @@ import com.zzw.chatserver.service.SuperUserService;
 import com.zzw.chatserver.service.UserService;
 import com.zzw.chatserver.utils.ChatServerUtil;
 import com.zzw.chatserver.utils.DateUtil;
+import com.zzw.chatserver.utils.SensitiveInfoDesensitizerUtil;
 import org.bson.types.ObjectId;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,6 +27,9 @@ import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
 
 import javax.annotation.Resource;
 import java.util.*;
@@ -59,6 +63,56 @@ public class UserServiceImpl implements UserService {
     @Resource
     private SuperUserService superUserService;
 
+    /**
+     * 获取当前登录用户的ID（uid或超级管理员sid的字符串形式）
+     * @return 当前登录用户ID，未登录或认证失败时返回null
+     */
+    private String getCurrentUserId() {
+        // 1. 从Spring Security上下文获取认证信息
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+
+        // 2. 校验认证状态（未认证或匿名用户直接返回null）
+        if (authentication == null
+                || !authentication.isAuthenticated()
+                || authentication.getPrincipal() == "anonymousUser") {
+            logger.warn("当前用户未认证或为匿名用户，无法获取用户ID");
+            return null;
+        }
+
+        // 3. 从认证信息中提取用户名
+        String username = null;
+        if (authentication.getPrincipal() instanceof UserDetails) {
+            // 标准认证流程：从UserDetails中获取用户名
+            UserDetails userDetails = (UserDetails) authentication.getPrincipal();
+            username = userDetails.getUsername();
+        } else if (authentication.getPrincipal() instanceof String) {
+            // 特殊情况：principal直接存储为用户名字符串
+            username = (String) authentication.getPrincipal();
+        }
+
+        if (username == null || username.isEmpty()) {
+            logger.warn("无法从认证信息中提取用户名");
+            return null;
+        }
+
+        // 4. 先尝试查询普通用户
+        User user = userDao.findUserByUsername(username);
+        if (user != null && user.getUid() != null) {
+            return user.getUid(); // 返回普通用户的uid
+        }
+
+        // 5. 普通用户不存在时，尝试查询超级管理员
+        SuperUser superUser = superUserService.existSuperUser(username);
+        if (superUser != null && superUser.getSid() != null) {
+            return superUser.getSid().toString(); // 返回超级管理员sid的字符串形式
+        }
+
+        // 6. 所有查询失败的情况
+        logger.warn("未找到用户名[{}]对应的用户或超级管理员信息", username);
+        return null;
+    }
+
+
     @Override
     public User findUserByUsername(String username) {
         return userDao.findUserByUsername(username);
@@ -70,9 +124,10 @@ public class UserServiceImpl implements UserService {
         Integer code = null;
         String msg = null;
         String userCode = null;
-        String userId = null;
+        String userIdStr = null;
+        String uid = null;
 
-        // 校验操作者是否为超级管理员（需根据你的超级管理员判断逻辑实现）
+        // 校验操作者是否为超级管理员
         if (!isSuperAdmin(operatorId)) {
             code = ResultEnum.PERMISSION_DENIED.getCode();
             msg = "仅超级管理员可创建客服账号";
@@ -81,7 +136,7 @@ public class UserServiceImpl implements UserService {
             return map;
         }
 
-        // 强制设置角色为客服（忽略请求中的role参数，防止恶意修改）
+        // 强制设置角色为客服
         rVo.setRole(UserRoleEnum.CUSTOMER_SERVICE.getCode());
 
         // 校验两次密码是否一致
@@ -111,6 +166,8 @@ public class UserServiceImpl implements UserService {
 
         String encryptedPwd = bCryptPasswordEncoder.encode(rVo.getPassword());
         User user = new User();
+        user.setUserId(new ObjectId()); // 生成userId
+        user.setUid(user.getUserId().toString()); // 用userId的字符串作为uid
         user.setUsername(rVo.getUsername());
         user.setPassword(encryptedPwd);
         user.setCode(String.valueOf(accountPool.getCode() + ConstValueEnum.INITIAL_NUMBER));
@@ -118,37 +175,50 @@ public class UserServiceImpl implements UserService {
         user.setNickname(rVo.getNickname() != null ? rVo.getNickname() : ChatServerUtil.randomNickname());
         user.setSignUpTime(new Date());
         user.setStatus(0);
-        user.setRole(UserRoleEnum.CUSTOMER_SERVICE.getCode()); // 强制客服角色
+        user.setRole(UserRoleEnum.CUSTOMER_SERVICE.getCode());
 
-        userDao.save(user);
+        // 保存用户（MongoDB自动生成userId，触发User类的setUserId方法同步uid）
+        User savedUser = userDao.save(user);
 
-        // 4. 处理客服的自动好友关系（与所有现有用户关联）
-        handleAutoFriendRelation(user);
+        // 校验uid是否正确赋值
+        if (savedUser.getUid() == null || !savedUser.getUid().equals(savedUser.getUserId().toString())) {
+            logger.warn("客服用户[{}]的uid未正确同步，手动修正", savedUser.getUsername());
+            savedUser.setUid(savedUser.getUserId().toString());
+            userDao.save(savedUser);
+        }
 
-        // 5. 返回结果（包含userId，供管理员后续操作）
-        userCode = user.getCode();
+        // 处理自动好友关系
+        handleAutoFriendRelation(savedUser);
+
+        // 封装返回结果（包含userId字符串和uid）
+        userCode = savedUser.getCode();
+        userIdStr = savedUser.getUserId().toString(); // userId的字符串形式
+        uid = savedUser.getUid(); // 与userIdStr一致，冗余返回方便前端使用
         code = ResultEnum.REGISTER_SUCCESS.getCode();
         msg = ResultEnum.REGISTER_SUCCESS.getMessage();
         map.put("code", code);
         map.put("msg", msg);
         map.put("userCode", userCode);
+        map.put("userId", userIdStr); // 新增：返回userId的字符串形式
+        map.put("uid", uid); // 新增：返回uid（与userId字符串一致）
 
         return map;
     }
 
-    // 新增：判断操作者是否为超级管理员（需根据你的实际逻辑实现）
+    // 判断操作者是否为超级管理员
     public boolean isSuperAdmin(String operatorId) {
         try {
+            // operatorId应为uid（即ObjectId的字符串形式），转换为ObjectId查询
             ObjectId sid = new ObjectId(operatorId);
-            // 从superusers集合查询
             SuperUser superUser = superUserService.findBySid(sid);
-            // 校验是否为超级管理员（role=0）
             return superUser != null && superUser.getRole() == 0;
         } catch (IllegalArgumentException e) {
-            // operatorId格式错误，不是有效的ObjectId
+            // operatorId格式错误（非ObjectId字符串），直接返回false
+            logger.warn("操作者ID[{}]格式错误，非有效的ObjectId", operatorId);
             return false;
         }
     }
+
 
     /**
      * 普通注册逻辑
@@ -159,6 +229,8 @@ public class UserServiceImpl implements UserService {
         Integer code = null;
         String msg = null;
         String userCode = null;
+        String userIdStr = null;
+        String uid = null;
 
         // 1. 校验两次密码是否一致
         if (!rVo.getRePassword().equals(rVo.getPassword())) {
@@ -179,48 +251,61 @@ public class UserServiceImpl implements UserService {
             return map;
         }
 
-        // 3. 生成用户唯一编码（基于AccountPool）
+        // 3. 生成用户唯一编码
         AccountPool accountPool = new AccountPool();
-        accountPool.setType(ConstValueEnum.USERTYPE); // 用户类型标识
-        accountPool.setStatus(ConstValueEnum.ACCOUNT_USED); // 标记为已使用
+        accountPool.setType(ConstValueEnum.USERTYPE);
+        accountPool.setStatus(ConstValueEnum.ACCOUNT_USED);
         accountPoolDao.save(accountPool);
 
-        // 4. 加密密码并创建用户实体
+        // 4. 创建用户实体
         String encryptedPwd = bCryptPasswordEncoder.encode(rVo.getPassword());
         User user = new User();
+        user.setUserId(new ObjectId()); // 生成userId
+        user.setUid(user.getUserId().toString()); // 用userId的字符串作为uid
         user.setUsername(rVo.getUsername());
         user.setPassword(encryptedPwd);
         user.setCode(String.valueOf(accountPool.getCode() + ConstValueEnum.INITIAL_NUMBER));
         user.setPhoto(rVo.getAvatar());
-        user.setNickname(rVo.getNickname() != null ? rVo.getNickname() : ChatServerUtil.randomNickname()); // 生成随机昵称
+        user.setNickname(rVo.getNickname() != null ? rVo.getNickname() : ChatServerUtil.randomNickname());
         user.setSignUpTime(new Date());
-        user.setStatus(0); // 正常状态
+        user.setStatus(0);
         user.setRole(UserRoleEnum.BUYER.getCode());
 
-        userDao.save(user);
+        // 保存用户（自动生成userId并同步uid）
+        User savedUser = userDao.save(user);
 
-        //处理好友关系自动关联
-        handleAutoFriendRelation(user);
+        // 校验uid赋值
+        if (savedUser.getUid() == null || !savedUser.getUid().equals(savedUser.getUserId().toString())) {
+            logger.warn("普通用户[{}]的uid未正确同步，手动修正", savedUser.getUsername());
+            savedUser.setUid(savedUser.getUserId().toString());
+            userDao.save(savedUser);
+        }
 
-        // 注册成功，封装结果
-        userCode = user.getCode();
+        // 处理好友关系
+        handleAutoFriendRelation(savedUser);
+
+        // 注册成功，补充返回userId和uid
+        userCode = savedUser.getCode();
+        userIdStr = savedUser.getUserId().toString();
+        uid = savedUser.getUid();
         code = ResultEnum.REGISTER_SUCCESS.getCode();
         msg = ResultEnum.REGISTER_SUCCESS.getMessage();
         map.put("code", code);
         map.put("msg", msg);
         map.put("userCode", userCode);
+        map.put("userId", userIdStr); // 新增
+        map.put("uid", uid); // 新增
+
         return map;
     }
 
     /**
-     * 处理用户注册后的自动好友关系：
-     * - 若为客服：自动添加所有现有用户为好友，并让现有用户添加该客服为好友
-     * - 若为买家：自动添加所有现有客服为好友
+     * 处理用户注册后的自动好友关系
      */
     private void handleAutoFriendRelation(User newUser) {
-        // 校验新用户对象及关键字段是否为空
-        if (newUser == null || newUser.getUid() == null || newUser.getUserId() == null) {
-            logger.error("新用户对象或其关键字段为空，无法处理自动好友关系");
+        // 强化校验：确保newUser的userId和uid有效
+        if (newUser == null || newUser.getUserId() == null || newUser.getUid() == null) {
+            logger.error("新用户对象或关键字段（userId/uid）为空，无法处理自动好友关系");
             return;
         }
 
@@ -229,19 +314,18 @@ public class UserServiceImpl implements UserService {
             List<User> allUsers = mongoTemplate.findAll(User.class);
             List<GoodFriend> friendRelations = new ArrayList<>();
             for (User existUser : allUsers) {
-                // 校验现有用户及关键字段是否为空
-                if (existUser == null || existUser.getUid() == null || existUser.getUserId() == null) {
-                    logger.warn("发现无效用户数据，跳过处理");
+                if (existUser == null || existUser.getUserId() == null || existUser.getUid() == null) {
+                    logger.warn("发现无效用户数据（userId或uid为空），跳过处理");
                     continue;
                 }
 
-                if (!existUser.getUid().equals(newUser.getUid())) { // 排除自己
-                    // 新客服 -> 现有用户 的好友关系
+                if (!existUser.getUid().equals(newUser.getUid())) { // 使用uid比较，避免ObjectId直接比较问题
+                    // 新客服 -> 现有用户
                     GoodFriend friend1 = new GoodFriend();
-                    friend1.setUserM(newUser.getUserId());
+                    friend1.setUserM(newUser.getUserId()); // 存储ObjectId
                     friend1.setUserY(existUser.getUserId());
 
-                    // 现有用户 -> 新客服 的好友关系
+                    // 现有用户 -> 新客服
                     GoodFriend friend2 = new GoodFriend();
                     friend2.setUserM(existUser.getUserId());
                     friend2.setUserY(newUser.getUserId());
@@ -249,12 +333,11 @@ public class UserServiceImpl implements UserService {
                     friendRelations.add(friend1);
                     friendRelations.add(friend2);
 
-                    // 添加到好友分组（默认"我的好友"）
+                    // 添加到好友分组（使用uid）
                     addToFriendGroup(existUser, newUser.getUid());
                     addToFriendGroup(newUser, existUser.getUid());
                 }
             }
-            // 批量添加好友关系（减少数据库交互）
             if (!friendRelations.isEmpty()) {
                 goodFriendService.batchAddFriends(friendRelations);
             }
@@ -266,18 +349,17 @@ public class UserServiceImpl implements UserService {
             );
             List<GoodFriend> friendRelations = new ArrayList<>();
             for (User cs : customerServices) {
-                // 校验客服用户及关键字段是否为空
-                if (cs == null || cs.getUid() == null || cs.getUserId() == null) {
-                    logger.warn("发现无效客服数据，跳过处理");
+                if (cs == null || cs.getUserId() == null || cs.getUid() == null) {
+                    logger.warn("发现无效客服数据（userId或uid为空），跳过处理");
                     continue;
                 }
 
-                // 新增：买家 -> 客服 的好友关系
+                // 买家 -> 客服
                 GoodFriend friend1 = new GoodFriend();
                 friend1.setUserM(newUser.getUserId());
                 friend1.setUserY(cs.getUserId());
 
-                // 新增：客服 -> 买家 的好友关系
+                // 客服 -> 买家
                 GoodFriend friend2 = new GoodFriend();
                 friend2.setUserM(cs.getUserId());
                 friend2.setUserY(newUser.getUserId());
@@ -285,7 +367,7 @@ public class UserServiceImpl implements UserService {
                 friendRelations.add(friend1);
                 friendRelations.add(friend2);
 
-                // 添加到好友分组
+                // 添加到好友分组（使用uid）
                 addToFriendGroup(newUser, cs.getUid());
                 addToFriendGroup(cs, newUser.getUid());
             }
@@ -296,93 +378,113 @@ public class UserServiceImpl implements UserService {
     }
 
     /**
-     * 新增好友分组
+     * 将好友添加到用户的"我的好友"分组（使用uid存储）
+     */
+    private void addToFriendGroup(User user, String friendUid) {
+        // 确保friendFenZuMap初始化
+        Map<String, ArrayList<String>> friendFenZuMap = user.getFriendFenZu();
+        if (friendFenZuMap == null) {
+            friendFenZuMap = new HashMap<>();
+            user.setFriendFenZu(friendFenZuMap);
+        }
+        // 添加好友uid到分组
+        friendFenZuMap.computeIfAbsent("我的好友", k -> new ArrayList<>())
+                .add(friendUid);
+        mongoTemplate.save(user);
+    }
+
+    /**
+     * 根据用户ID（uid字符串）查询用户信息
      */
     @Override
-    public void addNewFenZu(NewFenZuRequestVo requestVo) {
-        // 1. 获取用户信息
-        User userInfo = userDao.findById(new ObjectId(requestVo.getUserId())).orElse(null);
-        if (userInfo == null) {
-            return; // 用户不存在，不执行操作
+    public User getUserInfo(String userId) {
+        if (userId == null || !ObjectId.isValid(userId)) {
+            throw new BusinessException("用户ID格式错误，需为有效的ObjectId字符串（24位十六进制）");
         }
 
-        // 2. 校验分组是否已存在，不存在则新增
+        User user = userDao.findById(new ObjectId(userId)).orElse(null);
+        if (user != null) {
+            // 1. 获取当前登录用户ID
+            String currentUserId = getCurrentUserId();
+            // 2. 判断当前用户是否为超级管理员
+            boolean isSuperAdmin = currentUserId != null && isSuperAdmin(currentUserId);
+
+            // 3. 非超级管理员：对所有敏感字段（手机号、身份证号、邮箱）进行脱敏
+            if (!isSuperAdmin) {
+                // 手机号脱敏（调用通用方法，字段名匹配"phone"）
+                user.setPhone(SensitiveInfoDesensitizerUtil.desensitize("phone", user.getPhone()));
+                // 身份证号脱敏（调用通用方法，字段名匹配"idcard"）
+                user.setIDcard(SensitiveInfoDesensitizerUtil.desensitize("idcard", user.getIDcard()));
+                // 新增：邮箱脱敏（调用通用方法，字段名匹配"email"）
+                user.setEmail(SensitiveInfoDesensitizerUtil.desensitize("email", user.getEmail()));
+            }
+        }
+        return user;
+    }
+
+
+    /**
+     * 修改好友备注（使用uid作为好友标识）
+     */
+    @Override
+    public void modifyBeiZhu(ModifyFriendBeiZhuRequestVo requestVo) {
+        User userInfo = getUserInfo(requestVo.getUserId());
+        if (userInfo == null) {
+            return;
+        }
+
+        Map<String, String> friendBeiZhuMap = userInfo.getFriendBeiZhu();
+        if (friendBeiZhuMap == null) {
+            friendBeiZhuMap = new HashMap<>();
+            userInfo.setFriendBeiZhu(friendBeiZhuMap);
+        }
+        // 用好友uid作为key存储备注
+        friendBeiZhuMap.put(requestVo.getFriendId(), requestVo.getFriendBeiZhuName());
+
+        Update update = new Update().set("friendBeiZhu", friendBeiZhuMap);
+        Query query = Query.query(Criteria.where("_id").is(new ObjectId(requestVo.getUserId())));
+        mongoTemplate.findAndModify(query, update, User.class);
+    }
+
+    // 以下方法保持原有逻辑不变，已确保使用uid作为字符串标识处理分组和好友关系
+    @Override
+    public void addNewFenZu(NewFenZuRequestVo requestVo) {
+        User userInfo = userDao.findById(new ObjectId(requestVo.getUserId())).orElse(null);
+        if (userInfo == null) {
+            return;
+        }
+
         Map<String, ArrayList<String>> friendFenZuMap = userInfo.getFriendFenZu();
+        if (friendFenZuMap == null) {
+            friendFenZuMap = new HashMap<>();
+            userInfo.setFriendFenZu(friendFenZuMap);
+        }
         if (!friendFenZuMap.containsKey(requestVo.getFenZuName())) {
             friendFenZuMap.put(requestVo.getFenZuName(), new ArrayList<>());
-
-            // 3. 更新用户分组信息到数据库
             Update update = new Update().set("friendFenZu", friendFenZuMap);
             Query query = Query.query(Criteria.where("_id").is(new ObjectId(requestVo.getUserId())));
             mongoTemplate.findAndModify(query, update, User.class);
         }
     }
 
-    /**
-     * 将好友添加到用户的"我的好友"分组
-     */
-    private void addToFriendGroup(User user, String friendUid) {
-        user.getFriendFenZu().computeIfAbsent("我的好友", k -> new java.util.ArrayList<>())
-                .add(friendUid);
-        mongoTemplate.save(user);
-    }
-
-    /**
-     * 根据用户ID查询用户信息
-     */
-    @Override
-    public User getUserInfo(String userId) {
-        // 1. 校验 userId 是否符合 ObjectId 格式（24位十六进制字符串）
-        if (userId == null || !ObjectId.isValid(userId)) {
-            // 可根据业务需求选择：抛异常 / 返回 null / 日志提示
-            throw new BusinessException("用户ID格式错误，需为有效的ObjectId（24位十六进制字符串）");
-            // 或直接返回 null：return null;
-        }
-        // 2. 格式有效时，用 ObjectId 查询 _id 字段
-        return userDao.findById(new ObjectId(userId)).orElse(null);
-    }
-
-    /**
-     * 修改好友备注
-     */
-    @Override
-    public void modifyBeiZhu(ModifyFriendBeiZhuRequestVo requestVo) {
-        // 1. 获取用户信息
-        User userInfo = getUserInfo(requestVo.getUserId());
-        if (userInfo == null) {
-            return;
-        }
-
-        // 2. 更新好友备注Map
-        Map<String, String> friendBeiZhuMap = userInfo.getFriendBeiZhu();
-        friendBeiZhuMap.put(requestVo.getFriendId(), requestVo.getFriendBeiZhuName());
-
-        // 3. 保存更新到数据库
-        Update update = new Update().set("friendBeiZhu", friendBeiZhuMap);
-        Query query = Query.query(Criteria.where("_id").is(new ObjectId(requestVo.getUserId())));
-        mongoTemplate.findAndModify(query, update, User.class);
-    }
-
-    /**
-     * 移动好友到其他分组
-     */
     @Override
     public void modifyFriendFenZu(ModifyFriendFenZuRequestVo requestVo) {
-        // 1. 获取用户信息
         User userInfo = getUserInfo(requestVo.getUserId());
         if (userInfo == null) {
             return;
         }
 
         Map<String, ArrayList<String>> friendFenZuMap = userInfo.getFriendFenZu();
+        if (friendFenZuMap == null) {
+            return;
+        }
         boolean isRemoved = false;
 
-        // 2. 从原分组中移除好友
+        // 从原分组移除好友友uid
         for (Map.Entry<String, ArrayList<String>> entry : friendFenZuMap.entrySet()) {
             Iterator<String> iterator = entry.getValue().iterator();
             while (iterator.hasNext()) {
                 if (iterator.next().equals(requestVo.getFriendId())) {
-                    // 原分组不是新分组才移除
                     if (!entry.getKey().equals(requestVo.getNewFenZuName())) {
                         iterator.remove();
                     }
@@ -395,82 +497,82 @@ public class UserServiceImpl implements UserService {
             }
         }
 
-        // 3. 将好友添加到新分组
-        friendFenZuMap.get(requestVo.getNewFenZuName()).add(requestVo.getFriendId());
+        // 添加到新分组
+        friendFenZuMap.computeIfAbsent(requestVo.getNewFenZuName(), k -> new ArrayList<>())
+                .add(requestVo.getFriendId());
 
-        // 4. 保存更新到数据库
         Update update = new Update().set("friendFenZu", friendFenZuMap);
         Query query = Query.query(Criteria.where("_id").is(new ObjectId(requestVo.getUserId())));
         mongoTemplate.findAndModify(query, update, User.class);
     }
 
-    /**
-     * 删除好友分组
-     */
     @Override
     public void deleteFenZu(DelFenZuRequestVo requestVo) {
-        // 1. 获取用户信息
         User userInfo = getUserInfo(requestVo.getUserId());
         if (userInfo == null) {
             return;
         }
 
-        // 2. 从分组Map中移除指定分组
         Map<String, ArrayList<String>> friendFenZuMap = userInfo.getFriendFenZu();
-        friendFenZuMap.remove(requestVo.getFenZuName());
-
-        // 3. 保存更新到数据库
-        Update update = new Update().set("friendFenZu", friendFenZuMap);
-        Query query = Query.query(Criteria.where("_id").is(new ObjectId(requestVo.getUserId())));
-        mongoTemplate.findAndModify(query, update, User.class);
+        if (friendFenZuMap != null) {
+            friendFenZuMap.remove(requestVo.getFenZuName());
+            Update update = new Update().set("friendFenZu", friendFenZuMap);
+            Query query = Query.query(Criteria.where("_id").is(new ObjectId(requestVo.getUserId())));
+            mongoTemplate.findAndModify(query, update, User.class);
+        }
     }
 
-    /**
-     * 编辑分组名称（重命名）
-     */
     @Override
     public void editFenZu(EditFenZuRequestVo requestVo) {
-        // 1. 获取用户信息
         User userInfo = getUserInfo(requestVo.getUserId());
         if (userInfo == null) {
             return;
         }
 
-        // 2. 迁移旧分组的用户到新分组，删除旧分组
         Map<String, ArrayList<String>> friendFenZuMap = userInfo.getFriendFenZu();
+        if (friendFenZuMap == null) {
+            return;
+        }
         ArrayList<String> oldFenZuUsers = friendFenZuMap.get(requestVo.getOldFenZu());
-        friendFenZuMap.remove(requestVo.getOldFenZu());
-        friendFenZuMap.put(requestVo.getNewFenZu(), oldFenZuUsers);
-
-        // 3. 保存更新到数据库
-        Update update = new Update().set("friendFenZu", friendFenZuMap);
-        Query query = Query.query(Criteria.where("_id").is(new ObjectId(requestVo.getUserId())));
-        mongoTemplate.findAndModify(query, update, User.class);
+        if (oldFenZuUsers != null) {
+            friendFenZuMap.remove(requestVo.getOldFenZu());
+            friendFenZuMap.put(requestVo.getNewFenZu(), oldFenZuUsers);
+            Update update = new Update().set("friendFenZu", friendFenZuMap);
+            Query query = Query.query(Criteria.where("_id").is(new ObjectId(requestVo.getUserId())));
+            mongoTemplate.findAndModify(query, update, User.class);
+        }
     }
 
-    /**
-     * 搜索用户
-     */
     @Override
     public List<User> searchUser(SearchRequestVo requestVo, String uid) {
-        // 1. 构建模糊查询条件（不区分大小写）
         Criteria criteria = Criteria.where(requestVo.getType())
                 .regex(Pattern.compile("^.*" + requestVo.getSearchContent() + ".*$", Pattern.CASE_INSENSITIVE))
-                .and("uid").ne(uid); // 排除当前用户
+                .and("uid").ne(uid);
 
-        // 2. 构建查询（分页+按ID降序）
         Query query = Query.query(criteria)
                 .with(Sort.by(Sort.Direction.DESC, "_id"))
                 .skip((long) requestVo.getPageIndex() * requestVo.getPageSize())
                 .limit(requestVo.getPageSize());
 
-        // 3. 执行查询并返回结果
-        return mongoTemplate.find(query, User.class);
+        List<User> userList = mongoTemplate.find(query, User.class);
+
+        // 1. 获取当前登录用户ID
+        String currentUserId = getCurrentUserId();
+        // 2. 直接使用isSuperAdmin方法判断
+        boolean isSuperAdmin = currentUserId != null && isSuperAdmin(currentUserId);
+
+        // 非超级管理员：用通用脱敏方法处理手机号、身份证号、邮箱
+        if (!isSuperAdmin) {
+            for (User user : userList) {
+                user.setPhone(SensitiveInfoDesensitizerUtil.desensitize("phone", user.getPhone()));
+                user.setIDcard(SensitiveInfoDesensitizerUtil.desensitize("idcard", user.getIDcard()));
+                user.setEmail(SensitiveInfoDesensitizerUtil.desensitize("email", user.getEmail()));
+            }
+        }
+
+        return userList;
     }
 
-    /**
-     * 更新用户在线时长
-     */
     @Override
     public void updateOnlineTime(long onlineTime, String uid) {
         Update update = new Update().set("onlineTime", onlineTime);
@@ -478,9 +580,6 @@ public class UserServiceImpl implements UserService {
         mongoTemplate.upsert(query, update, User.class);
     }
 
-    /**
-     * 更新用户基本信息
-     */
     @Override
     public Map<String, Object> updateUserInfo(UpdateUserInfoRequestVo requestVo) {
         Map<String, Object> map = new HashMap<>();
@@ -489,75 +588,171 @@ public class UserServiceImpl implements UserService {
         Update update = new Update();
         boolean hasError = false;
 
-        // 1. 按字段类型进行合法性校验
-        switch (requestVo.getField()) {
-            case "sex":
-                // 性别需为数字（0=未知、1=男、3=女）
-                String sexStr = (String) requestVo.getValue();
-                if (!ChatServerUtil.isNumeric(sexStr)) {
-                    code = ResultEnum.ERROR_SETTING_GENDER.getCode();
-                    msg = ResultEnum.ERROR_SETTING_GENDER.getMessage();
+        try {
+            // 1. 校验用户ID格式
+            if (requestVo.getUserId() == null || !ObjectId.isValid(requestVo.getUserId())) {
+                code = ResultEnum.INVALID_USER_ID.getCode();
+                msg = "用户ID格式错误，需为有效的ObjectId字符串（24位十六进制）";
+                hasError = true;
+            }
+
+            // 2. 权限校验：基础权限（本人或超级管理员）
+            String currentUserId = getCurrentUserId();
+            if (!hasError) {
+                if (currentUserId == null ||
+                        !currentUserId.equals(requestVo.getUserId()) &&
+                                !isSuperAdmin(currentUserId)) {
+                    code = ResultEnum.PERMISSION_DENIED.getCode();
+                    msg = "无权限修改该用户信息";
                     hasError = true;
-                } else {
-                    Integer sex = Integer.valueOf(sexStr);
-                    if (sex != 0 && sex != 1 && sex != 3) {
-                        code = ResultEnum.ERROR_SETTING_GENDER.getCode();
-                        msg = ResultEnum.ERROR_SETTING_GENDER.getMessage();
-                        hasError = true;
-                    } else {
-                        update.set(requestVo.getField(), sex);
-                    }
                 }
-                break;
-            case "age":
-                // 年龄需为数字
-                String ageStr = requestVo.getValue().toString();
-                if (!ChatServerUtil.isNumeric(ageStr)) {
-                    code = ResultEnum.ERROR_SETTING_AGE.getCode();
-                    msg = ResultEnum.ERROR_SETTING_AGE.getMessage();
+            }
+
+            // 3. 校验可更新的字段（包含phone和IDcard，增加敏感字段标识）
+            List<String> allowUpdateFields = Arrays.asList("sex", "age", "email", "nickname", "photo", "sign", "phone", "IDcard");
+            List<String> sensitiveFields = Arrays.asList("phone", "IDcard"); // 敏感字段单独标记
+            if (!hasError && !allowUpdateFields.contains(requestVo.getField())) {
+                code = ResultEnum.INVALID_FIELD.getCode();
+                msg = "不支持修改字段：" + requestVo.getField();
+                hasError = true;
+            }
+
+            // 4. 敏感字段额外权限校验（可选：仅超级管理员可修改他人敏感信息）
+            if (!hasError && sensitiveFields.contains(requestVo.getField())) {
+                // 非本人且非超级管理员，禁止修改敏感字段
+                if (!currentUserId.equals(requestVo.getUserId()) && !isSuperAdmin(currentUserId)) {
+                    code = ResultEnum.PERMISSION_DENIED.getCode();
+                    msg = "仅本人或超级管理员可修改敏感信息";
                     hasError = true;
-                } else {
-                    update.set(requestVo.getField(), Integer.valueOf(ageStr));
                 }
-                break;
-            case "email":
-                // 邮箱格式校验
-                String email = (String) requestVo.getValue();
-                if (!ChatServerUtil.isEmail(email)) {
-                    code = ResultEnum.ERROR_SETTING_EMAIL.getCode();
-                    msg = ResultEnum.ERROR_SETTING_EMAIL.getMessage();
-                    hasError = true;
-                } else {
-                    update.set(requestVo.getField(), email);
+            }
+
+            // 5. 字段具体校验（新增phone和IDcard的校验逻辑）
+            if (!hasError) {
+                switch (requestVo.getField()) {
+                    // ... 保留原有字段的校验逻辑 ...
+                    case "sex":
+                        String sexStr = (String) requestVo.getValue();
+                        if (!ChatServerUtil.isNumeric(sexStr)) {
+                            code = ResultEnum.ERROR_SETTING_GENDER.getCode();
+                            msg = ResultEnum.ERROR_SETTING_GENDER.getMessage();
+                            hasError = true;
+                        } else {
+                            Integer sex = Integer.valueOf(sexStr);
+                            if (sex != 0 && sex != 1 && sex != 3) {
+                                code = ResultEnum.ERROR_SETTING_GENDER.getCode();
+                                msg = ResultEnum.ERROR_SETTING_GENDER.getMessage();
+                                hasError = true;
+                            } else {
+                                update.set(requestVo.getField(), sex);
+                            }
+                        }
+                        break;
+                    case "age":
+                        String ageStr = requestVo.getValue().toString();
+                        if (!ChatServerUtil.isNumeric(ageStr)) {
+                            code = ResultEnum.ERROR_SETTING_AGE.getCode();
+                            msg = ResultEnum.ERROR_SETTING_AGE.getMessage();
+                            hasError = true;
+                        } else {
+                            int age = Integer.parseInt(ageStr);
+                            if (age < 0 || age > 150) {
+                                code = ResultEnum.ERROR_SETTING_AGE.getCode();
+                                msg = "年龄必须在0-150之间";
+                                hasError = true;
+                            } else {
+                                update.set(requestVo.getField(), age);
+                            }
+                        }
+                        break;
+                    case "email":
+                        String email = (String) requestVo.getValue();
+                        if (email == null || !ChatServerUtil.isEmail(email)) {
+                            code = ResultEnum.ERROR_SETTING_EMAIL.getCode();
+                            msg = ResultEnum.ERROR_SETTING_EMAIL.getMessage();
+                            hasError = true;
+                        } else {
+                            update.set(requestVo.getField(), email);
+                        }
+                        break;
+                    // 新增手机号校验
+                    case "phone":
+                        String phone = (String) requestVo.getValue();
+                        if (phone == null || !ChatServerUtil.isPhone(phone)) {
+                            code = ResultEnum.ERROR_SETTING_PHONE.getCode();
+                            msg = "手机号格式错误（需为11位数字）";
+                            hasError = true;
+                        } else {
+                            update.set(requestVo.getField(), phone);
+                        }
+                        break;
+                    // 新增身份证号校验
+                    case "IDcard":
+                        String idCard = (String) requestVo.getValue();
+                        if (idCard == null || !ChatServerUtil.isIDCard(idCard)) {
+                            code = ResultEnum.ERROR_SETTING_IDCARD.getCode();
+                            msg = "身份证号格式错误（需为18位，最后一位可为X）";
+                            hasError = true;
+                        } else {
+                            update.set(requestVo.getField(), idCard);
+                        }
+                        break;
+                    default:
+                        if (requestVo.getValue() instanceof String) {
+                            String valueStr = (String) requestVo.getValue();
+                            if (valueStr.length() > 100) {
+                                code = ResultEnum.FIELD_TOO_LONG.getCode();
+                                msg = requestVo.getField() + "长度不能超过100个字符";
+                                hasError = true;
+                            } else {
+                                update.set(requestVo.getField(), valueStr);
+                            }
+                        } else {
+                            update.set(requestVo.getField(), requestVo.getValue());
+                        }
+                        break;
                 }
-                break;
-            default:
-                // 其他字段（如昵称、签名）直接更新
-                update.set(requestVo.getField(), requestVo.getValue());
-                break;
+            }
+
+            // 6. 执行更新操作
+            if (!hasError) {
+                Query query = Query.query(Criteria.where("_id").is(new ObjectId(requestVo.getUserId())));
+                mongoTemplate.upsert(query, update, User.class);
+
+                // 敏感字段日志脱敏记录
+                String logValue = sensitiveFields.contains(requestVo.getField())
+                        ? SensitiveInfoDesensitizerUtil.desensitize(requestVo.getField(), requestVo.getValue().toString())
+                        : requestVo.getValue().toString();
+                logger.info("用户信息更新成功，用户ID：{}，更新字段：{}，值：{}",
+                        requestVo.getUserId(),
+                        requestVo.getField(),
+                        logValue);
+
+                code = ResultEnum.SUCCESS.getCode();
+                msg = "用户信息更新成功";
+            }
+        } catch (Exception e) {
+            logger.error("更新用户信息失败，用户ID：{}，错误信息：{}",
+                    requestVo.getUserId(),
+                    e.getMessage(),
+                    e);
+            code = ResultEnum.SYSTEM_ERROR.getCode();
+            msg = "系统异常，更新失败";
+            hasError = true;
         }
 
-        // 2. 无错误则执行更新，有错误则返回错误信息
-        if (!hasError) {
-            Query query = Query.query(Criteria.where("_id").is(new ObjectId(requestVo.getUserId())));
-            mongoTemplate.upsert(query, update, User.class);
-        } else {
-            map.put("code", code);
-            map.put("msg", msg);
-        }
+        map.put("code", code);
+        map.put("msg", msg);
         return map;
     }
 
-    /**
-     * 修改用户密码
-     */
+
     @Override
     public Map<String, Object> updateUserPwd(UpdateUserPwdRequestVo requestVo) {
         Map<String, Object> map = new HashMap<>();
         Integer code = null;
         String msg = null;
 
-        // 1. 校验两次新密码是否一致
         if (!requestVo.getReNewPwd().equals(requestVo.getNewPwd())) {
             code = ResultEnum.INCORRECT_PASSWORD_TWICE.getCode();
             msg = ResultEnum.INCORRECT_PASSWORD_TWICE.getMessage();
@@ -566,7 +761,6 @@ public class UserServiceImpl implements UserService {
             return map;
         }
 
-        // 2. 校验旧密码是否正确
         User userInfo = getUserInfo(requestVo.getUserId());
         if (!bCryptPasswordEncoder.matches(requestVo.getOldPwd(), userInfo.getPassword())) {
             code = ResultEnum.OLD_PASSWORD_ERROR.getCode();
@@ -576,13 +770,11 @@ public class UserServiceImpl implements UserService {
             return map;
         }
 
-        // 3. 加密新密码并更新
         String encryptedNewPwd = bCryptPasswordEncoder.encode(requestVo.getNewPwd());
         Update update = new Update().set("password", encryptedNewPwd);
         Query query = Query.query(Criteria.where("_id").is(new ObjectId(requestVo.getUserId())));
         mongoTemplate.upsert(query, update, User.class);
 
-        // 4. 更新成功，返回结果
         code = ResultEnum.SUCCESS.getCode();
         msg = "更新成功，请牢记你的新密码";
         map.put("code", code);
@@ -590,12 +782,8 @@ public class UserServiceImpl implements UserService {
         return map;
     }
 
-    /**
-     * 更新用户个性化配置
-     */
     @Override
     public boolean updateUserConfigure(UpdateUserConfigureRequestVo requestVo, String uid) {
-        // 构建更新条件和字段
         Query query = Query.query(Criteria.where("_id").is(new ObjectId(uid)));
         Update update = new Update()
                 .set("opacity", requestVo.getOpacity())
@@ -606,36 +794,58 @@ public class UserServiceImpl implements UserService {
                 .set("color", requestVo.getColor())
                 .set("bgColor", requestVo.getBgColor());
 
-        // 执行更新，返回是否修改成功（修改行数>0即为成功）
         return mongoTemplate.upsert(query, update, User.class).getModifiedCount() > 0;
     }
 
-    /**
-     * 获取所有用户列表
-     */
     @Override
     public List<User> getUserList() {
-        return userDao.findAll();
+        List<User> userList = userDao.findAll();
+
+        // 1. 获取当前登录用户ID
+        String currentUserId = getCurrentUserId();
+        // 2. 直接使用isSuperAdmin方法判断
+        boolean isSuperAdmin = currentUserId != null && isSuperAdmin(currentUserId);
+
+        // 非超级管理员：用通用脱敏方法处理手机号、身份证号、邮箱
+        if (!isSuperAdmin) {
+            for (User user : userList) {
+                user.setPhone(SensitiveInfoDesensitizerUtil.desensitize("phone", user.getPhone()));
+                user.setIDcard(SensitiveInfoDesensitizerUtil.desensitize("idcard", user.getIDcard()));
+                user.setEmail(SensitiveInfoDesensitizerUtil.desensitize("email", user.getEmail()));
+            }
+        }
+
+        return userList;
     }
 
     /**
-     * 根据注册时间范围查询用户
+     * 按注册时间获取用户（带权限控制的脱敏处理）
      */
     @Override
     public List<User> getUsersBySignUpTime(String lt, String rt) {
-        // 转换时间格式并构建查询条件
         Criteria criteria = Criteria.where("signUpTime")
                 .gte(DateUtil.parseDate(lt, DateUtil.yyyy_MM))
                 .lte(DateUtil.parseDate(rt, DateUtil.yyyy_MM));
         Query query = Query.query(criteria);
+        List<User> userList = mongoTemplate.find(query, User.class);
 
-        // 执行查询并返回结果
-        return mongoTemplate.find(query, User.class);
+        // 1. 获取当前登录用户ID
+        String currentUserId = getCurrentUserId();
+        // 2. 直接使用isSuperAdmin方法判断
+        boolean isSuperAdmin = currentUserId != null && isSuperAdmin(currentUserId);
+
+        // 非超级管理员：用通用脱敏方法处理手机号、身份证号、邮箱
+        if (!isSuperAdmin) {
+            for (User user : userList) {
+                user.setPhone(SensitiveInfoDesensitizerUtil.desensitize("phone", user.getPhone()));
+                user.setIDcard(SensitiveInfoDesensitizerUtil.desensitize("idcard", user.getIDcard()));
+                user.setEmail(SensitiveInfoDesensitizerUtil.desensitize("email", user.getEmail()));
+            }
+        }
+
+        return userList;
     }
 
-    /**
-     * 修改用户状态
-     */
     @Override
     public void changeUserStatus(String uid, Integer status) {
         Update update = new Update().set("status", status);

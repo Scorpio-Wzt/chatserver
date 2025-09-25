@@ -81,12 +81,19 @@ public class SysController {
         if (!UserRoleEnum.CUSTOMER_SERVICE.getCode().equals(sender.getRole())) {
             return R.error().message("无权限发送系统通知");
         }
+//        System.out.println("type: " + notification.getType());
+//        System.out.println("orderNo: " + notification.getOrderNo());
+//        System.out.println("type匹配结果：" + "CONFIRM_RECEIPT".equals(notification.getType()));
+//        System.out.println("orderNo非空结果：" + (notification.getOrderNo() != null));
         // 若为“确认收货”类型，自动拼接订单信息到content
-        if ("CONFIRM_RECEIPT".equals(notification.getType())
-                && notification.getOrderNo() != null) {
-            notification.setContent(
-                    String.format("您的订单【%s】已送达，请确认收货", notification.getOrderNo())
-            );
+        if ("CONFIRM_RECEIPT".equals(notification.getType()) && notification.getOrderNo() != null) {
+            // 打印原始content
+            System.out.println("修改前的content：" + notification.getContent());
+            // 拼接新content
+            String newContent = String.format("您的订单【%s】已送达，请确认收货", notification.getOrderNo());
+            notification.setContent(newContent);
+            // 打印修改后的content
+            System.out.println("修改后的content：" + notification.getContent());
         }
         systemNotificationService.sendSystemNotification(notification);
         return R.ok();
