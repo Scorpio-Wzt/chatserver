@@ -4,10 +4,12 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.Date;
 import java.util.List;
 
-// 新增字段标识消息是否为卡片类型及卡片内容
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
@@ -18,7 +20,11 @@ public class NewMessageVo {
     private String senderName;// 发送者登录名
     private String senderNickname;// 发送者昵称
     private String senderAvatar; // 发送者头像
-    private Date time;// 消息发送时间
+    private String time = Instant.now()
+            // 转换为本地时区（如北京时间：UTC+8）
+            .atZone(ZoneId.of("Asia/Shanghai"))
+            // 格式化输出为友好字符串
+            .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
     private String fileRawName; //文件的原始名字
     private String message;// 消息内容
     private String messageType;// 消息的类型：emoji/text/img/file/sys

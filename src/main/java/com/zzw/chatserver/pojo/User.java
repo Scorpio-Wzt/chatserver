@@ -8,6 +8,9 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 
 @Data
@@ -40,8 +43,17 @@ public class User {
     private String notifySound = "default"; //提示音
     private String color = "#000"; //字体颜色
     private String bgColor = "#fff"; //背景颜色
-    private Date signUpTime = new Date();  // 注册时间
-    private Date lastLoginTime = new Date(); // 最后登录时间
+    // 注册时间（默认初始化当前时间，格式：yyyy-MM-dd HH:mm:ss，时区：Asia/Shanghai）
+    private String signUpTime = Instant.now()
+            // 转换为本地时区（如北京时间：UTC+8）
+            .atZone(ZoneId.of("Asia/Shanghai"))
+            // 格式化输出为友好字符串
+            .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+    private String lastLoginTime = Instant.now()
+            // 转换为本地时区（如北京时间：UTC+8）
+            .atZone(ZoneId.of("Asia/Shanghai"))
+            // 格式化输出为友好字符串
+            .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
     private Integer status = 0; // 0：正常，1：冻结，2：注销
     private Integer age = 18;
     private Long onlineTime = 0L; //在线时长
@@ -55,7 +67,7 @@ public class User {
     //好友备注信息
     private Map<String, String> friendBeiZhu = new HashMap<>();
 
-    // 新增：当userId被设置时，自动同步uid（解决手动设置userId的场景）
+    // 当userId被设置时，自动同步uid
     public void setUserId(ObjectId userId) {
         this.userId = userId;
         if (userId != null) {

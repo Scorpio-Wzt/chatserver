@@ -23,11 +23,10 @@ import java.util.UUID;
  */
 @Component
 public class MinIOUtil {
-    // 1. 保持静态客户端（和FastDFS的static client1对齐）
+    // 保持静态客户端（和FastDFS的static client1对齐）
     private MinioClient minioClient;
-    // 2. 从原有FastDFS配置文件读取参数（避免新增配置文件，完全兼容旧配置）
     @Value("${minio.endpoint}")
-    private String endpoint;       // MinIO地址（对应FastDFS的tracker地址）
+    private String endpoint;       // MinIO地址
     @Value("${minio.access-key}")
     private String accessKey;      // MinIO访问密钥
     @Value("${minio.secret-key}")
@@ -40,7 +39,7 @@ public class MinIOUtil {
     // 初始化MinIO客户端
     @PostConstruct
     public void initMinioClient() {
-        // expire的合法性校验（可选，避免配置错误）
+        // expire的合法性校验
         if (expire <= 0) {
             throw new RuntimeException("MinIO URL过期时间配置无效（expire必须大于0）");
         }
@@ -55,7 +54,7 @@ public class MinIOUtil {
         }
     }
 
-    // 4. uploadFile(MultipartFile)：返回值/参数/异常完全对齐FastDFS
+    // uploadFile(MultipartFile)：返回值/参数/异常完全对齐FastDFS
     public String uploadFile(MultipartFile file) throws IOException, MyException {
         try {
             if (file.isEmpty()) {
@@ -93,7 +92,7 @@ public class MinIOUtil {
         }
     }
 
-    // 5. downloadFile(String)
+    // downloadFile(String)
     public byte[] downloadFile(String fileId) throws IOException, MyException {
         try {
             if (fileId == null || fileId.isEmpty()) {
@@ -130,7 +129,7 @@ public class MinIOUtil {
         }
     }
 
-    // 6. uploadFile(String)：本地文件上传，返回值/参数/异常完全对齐FastDFS
+    // uploadFile(String)：本地文件上传，返回值/参数/异常完全对齐FastDFS
     public String uploadFile(String localFilePath) throws IOException, MyException {
         try {
             if (localFilePath == null || localFilePath.isEmpty()) {
@@ -168,7 +167,7 @@ public class MinIOUtil {
         }
     }
 
-    // 7. 生成MinIO原生预签名URL（简化实现，使用MinIO自带的签名机制）
+    // 生成MinIO原生预签名URL（简化实现，使用MinIO自带的签名机制）
     public String getFileUrl(String fileId) throws MyException {
         try {
             if (fileId == null || fileId.isEmpty()) {

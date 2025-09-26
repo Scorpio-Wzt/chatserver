@@ -112,25 +112,25 @@ public class GroupUserServiceImpl implements GroupUserService {
      */
     @Override
     public void addNewGroupUser(ValidateMessageResponseVo validateMessage) {
-        // 1. 校验成员是否已在群中（避免重复添加）
+        // 校验成员是否已在群中（避免重复添加）
         ObjectId userId = new ObjectId(validateMessage.getSenderId());
         ObjectId groupId = new ObjectId(validateMessage.getGroupInfo().getGid());
         GroupUser existingGroupUser = groupUserDao.findGroupUserByUserIdAndGroupId(userId, groupId);
 
         if (existingGroupUser == null) {
-            // 2. 新增群成员记录
+            // 群成员记录
             GroupUser groupUser = new GroupUser();
             groupUser.setGroupId(groupId);
             groupUser.setUserId(userId);
             groupUser.setUsername(validateMessage.getSenderName());
             groupUserDao.save(groupUser);
 
-            // 3. 群人数加1（更新groups表的userNum字段）
+            // 群人数加1（更新groups表的userNum字段）
             Update update = new Update();
             Query query = Query.query(Criteria.where("_id").is(groupId));
             mongoTemplate.upsert(query, update.inc("userNum", 1), Group.class);
 
-            // 4. 发送"加入群聊"系统消息（groupmessages表）
+            // 发送"加入群聊"系统消息（groupmessages表）
             GroupMessage groupMessage = new GroupMessage();
             groupMessage.setRoomId(groupId.toString());
             groupMessage.setSenderId(userId); // 记录发送者ID，便于后续退群删除消息

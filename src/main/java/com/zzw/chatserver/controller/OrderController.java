@@ -7,15 +7,12 @@ import com.zzw.chatserver.pojo.Order;
 import com.zzw.chatserver.pojo.User;
 import com.zzw.chatserver.auth.entity.JwtAuthUser;
 import com.zzw.chatserver.pojo.vo.CreateOrderVo;
-import com.zzw.chatserver.pojo.vo.GroupMessageResultVo;
-import com.zzw.chatserver.service.GroupMessageService;
 import com.zzw.chatserver.service.OrderService;
 import com.zzw.chatserver.service.UserService;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.validation.annotation.Validated;
@@ -25,7 +22,6 @@ import java.util.Collections;
 import java.util.List;
 import javax.validation.Valid;
 import javax.validation.constraints.NotBlank;
-import javax.validation.constraints.Positive;
 
 /**
  * 订单控制器
@@ -133,33 +129,33 @@ public class OrderController {
         }
     }
 
-    /**
-     * 3. 申请退款接口（用户本人 + 绑定的客服可操作）
-     */
     @PostMapping("/refund")
-    @ApiOperation(value = "申请退款", notes = "仅订单所属用户本人或绑定的客服可操作")
+    @ApiOperation(value = "申请退款", notes = "仅订单所属用户本人或绑定的客服可操作，需指定具体订单号")
     public R applyRefund(
             @ApiParam(value = "订单所属用户ID", required = true)
             @RequestParam @NotBlank(message = "用户ID不能为空") String userId,
 
             @ApiParam(value = "绑定的客服ID", required = true)
-            @RequestParam @NotBlank(message = "客服ID不能为空") String customerId
+            @RequestParam @NotBlank(message = "客服ID不能为空") String customerId,
+
+            @ApiParam(value = "订单编号（需退款的具体订单）", required = true, example = "ORD20231025001")
+            @RequestParam @NotBlank(message = "订单编号不能为空") String orderNo // 订单号参数
     ) {
         try {
             String currentUserId = getCurrentUserId();
             // 权限校验：用户本人或绑定的客服
             validateRefundPermission(currentUserId, userId, customerId);
-            // 校验用户和客服合法性
-            validateUserAndCustomerExists(userId, customerId);
+            // 校验用户、客服合法性 + 订单存在性及归属关系
+            validateOrderBelongsToUser(userId, customerId, orderNo);
             // 执行退款申请
-            orderService.applyRefund(userId, customerId);
-            log.info("用户[{}]申请退款（操作人：{}）成功", userId, currentUserId);
+            orderService.applyRefund(userId, customerId, orderNo); // 传递订单号到服务层
+            log.info("用户[{}]的订单[{}]申请退款（操作人：{}）成功", userId, orderNo, currentUserId);
             return R.ok().message("退款申请已提交，请等待处理");
         } catch (BusinessException e) {
-            log.warn("申请退款失败：{}", e.getMessage());
+            log.warn("订单[{}]申请退款失败：{}", orderNo, e.getMessage());
             return R.error().message(e.getMessage());
         } catch (Exception e) {
-            log.error("申请退款系统异常", e);
+            log.error("订单[{}]申请退款系统异常", orderNo, e);
             return R.error().message("申请退款失败，请稍后重试");
         }
     }
@@ -199,6 +195,21 @@ public class OrderController {
 
     // ------------------------------ 私有工具方法（权限/校验通用逻辑） ------------------------------
 
+    private void validateOrderBelongsToUser(String userId, String customerId, String orderNo) {
+        // 校验用户和客服存在性（复用已有逻辑）
+        validateUserAndCustomerExists(userId, customerId);
+
+        // 校验订单存在性
+        Order order = orderService.getOrderByNo(orderNo);
+        if (order == null) {
+            throw new BusinessException("订单不存在，无法申请退款");
+        }
+
+        // 校验订单归属（防止跨用户/跨客服操作订单）
+        if (!order.getUserId().equals(userId) || !order.getCustomerId().equals(customerId)) {
+            throw new BusinessException("订单归属异常，无法申请退款");
+        }
+    }
     /**
      * 获取当前登录用户ID（兼容JwtAuthUser/String类型的认证主体）
      */
@@ -208,11 +219,11 @@ public class OrderController {
             throw new BusinessException("用户未登录");
         }
         Object principal = authentication.getPrincipal();
-        // 场景1：认证主体是自定义JwtAuthUser（包含用户ID等信息）
+        // 认证主体是自定义JwtAuthUser
         if (principal instanceof JwtAuthUser) {
             return ((JwtAuthUser) principal).getUserId().toString();
         }
-        // 场景2：认证主体是用户名（String类型，视认证逻辑而定）
+        // 认证主体是用户名
         else if (principal instanceof String) {
             // 若主体是用户名，需通过UserService查询用户ID（根据实际认证逻辑调整）
             User user = userService.findUserByUsername((String) principal);

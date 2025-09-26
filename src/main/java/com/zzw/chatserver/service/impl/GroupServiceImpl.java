@@ -193,19 +193,19 @@ public class GroupServiceImpl implements GroupService {
     public void quitGroup(QuitGroupRequestVo requestVo) {
         if (requestVo.getHolder() == 1) {
             // 【群主退群】：删除群所有数据
-            // 1. 删除群所有消息（groupmessages集合）
+            // 删除群所有消息（groupmessages集合）
             delGroupAllMessagesByGroupId(requestVo.getGroupId());
-            // 2. 删除群所有成员（groupusers集合）
+            // 删除群所有成员（groupusers集合）
             delGroupAllUsersByGroupId(requestVo.getGroupId());
-            // 3. 删除群本身（groups集合）
+            // 删除群本身（groups集合）
             groupDao.deleteById(new ObjectId(requestVo.getGroupId()));
         } else {
             // 【普通成员退群】：仅删除个人相关数据
-            // 1. 删除当前用户发送的群消息
+            // 删除当前用户发送的群消息
             delGroupMessagesByGroupIdAndSenderId(requestVo.getGroupId(), requestVo.getUserId());
-            // 2. 删除当前用户的群成员关系
+            // 删除当前用户的群成员关系
             delGroupUserByGroupIdAndUserId(requestVo.getGroupId(), requestVo.getUserId());
-            // 3. 群人数减1
+            // 群人数减1
             decrGroupUserNum(requestVo.getGroupId());
         }
     }

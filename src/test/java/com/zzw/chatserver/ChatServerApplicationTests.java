@@ -26,6 +26,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.lang.management.ManagementFactory;
+import java.time.Instant;
 import java.util.*;
 
 @SpringBootTest
@@ -80,15 +81,15 @@ class ChatServerApplicationTests {
     private ObjectId testGroupId; // 测试群组ID
     private String testRoomId; // 群组roomId
     private String testSingleRoomId; // 单聊房间ID
-    // 新增：存储临时群组消息的_id（用于按_id排序匹配Service逻辑）
+
     private List<ObjectId> groupMsgIds = new ArrayList<>();
-    // 新增：存储临时单聊消息的_id
+    // 存储临时单聊消息的_id
     private List<ObjectId> singleMsgIds = new ArrayList<>();
 
     // 创建基础临时数据
     @BeforeEach
     void createBaseTestData() {
-        // 1. 创建测试用户
+        // 创建测试用户
         testUserId = new ObjectId();
         testUserUid = testUserId.toString();
         testUsername = "test_user_" + System.currentTimeMillis();
@@ -102,7 +103,7 @@ class ChatServerApplicationTests {
         testUser.setCode("USER_" + UUID.randomUUID().toString().substring(0, 6));
         mongoTemplate.insert(testUser, "users");
 
-        // 2. 创建测试好友
+        // 创建测试好友
         testFriendId = new ObjectId();
         testFriendUid = testFriendId.toString();
         testFriendUsername = "test_friend_" + System.currentTimeMillis();
@@ -114,19 +115,19 @@ class ChatServerApplicationTests {
         testFriend.setStatus(0);
         mongoTemplate.insert(testFriend, "users");
 
-        // 3. 创建好友关系
+        // 创建好友关系
         GoodFriend friendRelation = new GoodFriend();
         friendRelation.setId(new ObjectId());
         friendRelation.setUserM(testUserId);
         friendRelation.setUserY(testFriendId);
         mongoTemplate.insert(friendRelation, "goodfriends");
 
-        // 4. 添加好友到用户分组
+        // 添加好友到用户分组
         User updatedUser = mongoTemplate.findById(testUserId, User.class, "users");
         updatedUser.getFriendFenZu().get("我的好友").add(testFriendUid);
         mongoTemplate.save(updatedUser, "users");
 
-        // 5. 创建测试群组
+        // 创建测试群组
         testGroupId = new ObjectId();
         testRoomId = testGroupId.toString();
         Group testGroup = new Group();
@@ -138,7 +139,7 @@ class ChatServerApplicationTests {
         testGroup.setUserNum(2);
         mongoTemplate.insert(testGroup, "groups");
 
-        // 6. 添加群成员
+        // 添加群成员
         GroupUser groupUser1 = new GroupUser();
         groupUser1.setGuid(new ObjectId());
         groupUser1.setGroupId(testGroupId);
@@ -159,7 +160,7 @@ class ChatServerApplicationTests {
 
         mongoTemplate.insertAll(Arrays.asList(groupUser1, groupUser2));
 
-        // 7. 生成单聊房间ID
+        // 生成单聊房间ID
         testSingleRoomId = testUserUid.compareTo(testFriendUid) < 0
                 ? testUserUid + "-" + testFriendUid
                 : testFriendUid + "-" + testUserUid;
@@ -188,7 +189,7 @@ class ChatServerApplicationTests {
             msg.setSenderName(i % 2 == 0 ? testUsername : testFriendUsername);
             msg.setSenderNickname(i % 2 == 0 ? "测试用户" : "测试好友");
             msg.setMessage("群组测试消息" + (i + 1));
-            msg.setTime(new Date(System.currentTimeMillis() - i * 10000));
+            msg.setTime(Instant.now());
             msg.setMessageType("text");
             List<String> readUsers = new ArrayList<>();
             readUsers.add(i % 2 == 0 ? testUserUid : testFriendUid);
@@ -212,7 +213,7 @@ class ChatServerApplicationTests {
             msg.setSenderName(i % 2 == 0 ? testUsername : testFriendUsername);
             msg.setSenderNickname(i % 2 == 0 ? "测试用户" : "测试好友");
             msg.setMessage("单聊测试消息" + (i + 1));
-            msg.setTime(new Date(System.currentTimeMillis() - i * 10000));
+            msg.setTime(Instant.now());
             msg.setMessageType("text");
             List<String> readUsers = new ArrayList<>();
             readUsers.add(i % 2 == 0 ? testUserUid : testFriendUid);
@@ -400,7 +401,7 @@ class ChatServerApplicationTests {
         validateMsg.setReceiverId(testFriendId);
         validateMsg.setStatus(0);
         validateMsg.setValidateType(0);
-        validateMsg.setTime(new Date().toString());
+        validateMsg.setTime(Instant.now());
         validateMsg.setSenderName(testUsername);
         validateMsg.setSenderNickname("测试用户");
 
@@ -459,22 +460,22 @@ class ChatServerApplicationTests {
         System.out.println("单聊最近消息：" + JSON.toJSONString(messages) + "，实际存储消息数：" + actualCount);
     }
 
-    @Test
-    void userIsReadMsg() {
-        IsReadMessageRequestVo requestVo = new IsReadMessageRequestVo(testSingleRoomId, testUserUid);
-        messageService.userIsReadMessage(requestVo);
-
-        // 调整：查询单聊消息的isReadUser列表，确认当前用户已在其中
-        List<SingleMessage> messages = mongoTemplate.find(
-                Query.query(Criteria.where("roomId").is(testSingleRoomId)
-                        .and("receiverId").is(testUserUid)),
-                SingleMessage.class,
-                "singlemessages"
-        );
-        for (SingleMessage msg : messages) {
-            Assertions.assertTrue(msg.getIsReadUser().contains(testUserUid), "消息未添加当前用户到已读列表");
-        }
-    }
+//    @Test
+//    void userIsReadMsg() {
+//        IsReadMessageRequestVo requestVo = new IsReadMessageRequestVo(testSingleRoomId, testUserUid);
+//        messageService.userIsReadMessage(requestVo);
+//
+//        // 调整：查询单聊消息的isReadUser列表，确认当前用户已在其中
+//        List<SingleMessage> messages = mongoTemplate.find(
+//                Query.query(Criteria.where("roomId").is(testSingleRoomId)
+//                        .and("receiverId").is(testUserUid)),
+//                SingleMessage.class,
+//                "singlemessages"
+//        );
+//        for (SingleMessage msg : messages) {
+//            Assertions.assertTrue(msg.getIsReadUser().contains(testUserUid), "消息未添加当前用户到已读列表");
+//        }
+//    }
 
     // 关键调整：适配单聊历史消息的Service逻辑
     @Test

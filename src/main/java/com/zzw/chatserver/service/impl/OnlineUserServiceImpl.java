@@ -35,15 +35,15 @@ public class OnlineUserServiceImpl implements OnlineUserService {
      */
     @Override
     public void addClientIdToSimpleUser(String clientId, SimpleUser simpleUser) {
-        // 1. clientId -> 用户信息（1小时过期）
+        // clientId -> 用户信息（1小时过期）
         String clientKey = PREFIX_CLIENT_TO_USER + clientId;
         redisTemplate.opsForValue().set(clientKey, simpleUser, EXPIRE_HOURS, TimeUnit.HOURS);
 
-        // 2. userId -> clientId（双向绑定，1小时过期）
+        // userId -> clientId（双向绑定，1小时过期）
         String userKey = PREFIX_USER_TO_CLIENT + simpleUser.getUid();
         redisTemplate.opsForValue().set(userKey, clientId, EXPIRE_HOURS, TimeUnit.HOURS);
 
-        // 3. 加入在线用户集合
+        // 加入在线用户集合
         redisTemplate.opsForSet().add(PREFIX_ONLINE_UID_SET, simpleUser.getUid());
     }
 

@@ -54,7 +54,7 @@ public class BusinessException extends RuntimeException implements Serializable 
     }
 
     /**
-     * 新增：通过ResultEnum创建异常（使用枚举的错误码和消息）
+     * 通过ResultEnum创建异常（使用枚举的错误码和消息）
      * @param resultEnum 错误枚举（包含code和message）
      */
     public BusinessException(ResultEnum resultEnum) {
@@ -64,7 +64,7 @@ public class BusinessException extends RuntimeException implements Serializable 
     }
 
     /**
-     * 新增：通过ResultEnum+自定义消息创建异常（使用枚举的错误码，覆盖消息）
+     * 通过ResultEnum+自定义消息创建异常（使用枚举的错误码，覆盖消息）
      * @param resultEnum 错误枚举（提供code）
      * @param message 自定义错误消息（覆盖枚举默认消息）
      */

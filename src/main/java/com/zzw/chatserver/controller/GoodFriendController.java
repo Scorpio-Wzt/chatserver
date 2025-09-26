@@ -103,18 +103,18 @@ public class GoodFriendController {
             @ApiParam(value = "当前用户ID（24位有效的ObjectId）", required = true)
             @RequestParam(required = true) String userId) {
         try {
-            // 1. 参数校验：非空+格式正确
+            // 参数校验：非空+格式正确
             if (userId == null || !ObjectId.isValid(userId)) {
                 return R.error().resultEnum(ResultEnum.INVALID_USER_ID);
             }
 
-            // 2. 权限校验：只能查询自己的好友列表
+            // 权限校验：只能查询自己的好友列表
             String currentUserId = userService.getCurrentUserId(); // 复用UserService中安全的获取方式
             if (currentUserId == null || !currentUserId.equals(userId)) {
                 return R.error().resultEnum(ResultEnum.PERMISSION_DENIED);
             }
 
-            // 3. 调用服务层，处理null为empty list
+            // 调用服务层，处理null为empty list
             List<MyFriendListResultVo> myFriendsList = goodFriendService.getMyFriendsList(userId);
             return R.ok().data("myFriendsList", myFriendsList != null ? myFriendsList : Collections.emptyList());
         } catch (BusinessException e) {
@@ -140,7 +140,7 @@ public class GoodFriendController {
             @ApiParam(value = "请求参数（包含userId、pageIndex、pageSize）", required = true)
             @RequestBody RecentConversationVo recentConversationVo) {
         try {
-            // 1. 参数校验：确保用户ID非空且格式正确
+            // 参数校验：确保用户ID非空且格式正确
             if (recentConversationVo == null || recentConversationVo.getUserId() == null) {
                 return R.error().message("用户ID不能为空");
             }
@@ -149,17 +149,16 @@ public class GoodFriendController {
                 return R.error().resultEnum(ResultEnum.INVALID_USER_ID);
             }
 
-            // 2. 权限校验：只能查询自己的记录
+            // 权限校验：只能查询自己的记录
             String currentUserId = userService.getCurrentUserId();
             if (currentUserId == null || !currentUserId.equals(userId)) {
                 return R.error().resultEnum(ResultEnum.PERMISSION_DENIED);
             }
 
-            // 3. 调用服务层：查询“既是好友+有最近聊天记录”的用户
+            // 调用服务层：查询“既是好友+有最近聊天记录”的用户
             // 服务层需确保过滤掉非好友和无聊天记录的用户
             List<SingleRecentConversationResultVo> resultVoList = goodFriendService.getRecentChatFriends(recentConversationVo);
 
-            // 4. 返回结果（空列表处理，避免前端null错误）
             return R.ok().data("recentChatFriendsList",
                     resultVoList != null ? resultVoList : Collections.emptyList());
         } catch (BusinessException e) {
@@ -183,23 +182,23 @@ public class GoodFriendController {
             @ApiParam(value = "删除好友请求参数（userM为当前用户ID，userY为目标好友ID）", required = true)
             @RequestBody DelGoodFriendRequestVo requestVo) {
         try {
-            // 1. 参数完整性校验
+            // 参数完整性校验
             if (requestVo == null || requestVo.getUserM() == null || requestVo.getUserY() == null) {
                 return R.error().message("操作人ID和被删除好友ID不能为空");
             }
 
-            // 2. ID格式校验
+            // ID格式校验
             if (!ObjectId.isValid(requestVo.getUserM()) || !ObjectId.isValid(requestVo.getUserY())) {
                 return R.error().resultEnum(ResultEnum.INVALID_USER_ID);
             }
 
-            // 3. 权限校验：必须是本人操作（使用UserService获取当前用户ID，避免强转风险）
+            // 权限校验：必须是本人操作（使用UserService获取当前用户ID，避免强转风险）
             String currentUserId = userService.getCurrentUserId();
             if (currentUserId == null || !currentUserId.equals(requestVo.getUserM())) {
                 return R.error().resultEnum(ResultEnum.ILLEGAL_OPERATION);
             }
 
-            // 4. 调用服务层删除好友
+            // 调用服务层删除好友
             goodFriendService.deleteFriend(requestVo);
             return R.ok().message("删除好友成功");
         } catch (BusinessException e) {

@@ -32,6 +32,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 
 import javax.annotation.Resource;
+import java.time.Instant;
 import java.util.*;
 import java.util.regex.Pattern;
 
@@ -174,7 +175,7 @@ public class UserServiceImpl implements UserService {
         user.setCode(String.valueOf(accountPool.getCode() + ConstValueEnum.INITIAL_NUMBER));
         user.setPhoto(rVo.getAvatar());
         user.setNickname(rVo.getNickname() != null ? rVo.getNickname() : ChatServerUtil.randomNickname());
-        user.setSignUpTime(new Date());
+        user.setSignUpTime(String.valueOf(Instant.now()));
         user.setStatus(0);
         user.setRole(UserRoleEnum.CUSTOMER_SERVICE.getCode());
 
@@ -200,8 +201,8 @@ public class UserServiceImpl implements UserService {
         map.put("code", code);
         map.put("msg", msg);
         map.put("userCode", userCode);
-        map.put("userId", userIdStr); // 新增：返回userId的字符串形式
-        map.put("uid", uid); // 新增：返回uid（与userId字符串一致）
+        map.put("userId", userIdStr);
+        map.put("uid", uid);
 
         return map;
     }
@@ -268,7 +269,7 @@ public class UserServiceImpl implements UserService {
         user.setCode(String.valueOf(accountPool.getCode() + ConstValueEnum.INITIAL_NUMBER));
         user.setPhoto(rVo.getAvatar());
         user.setNickname(rVo.getNickname() != null ? rVo.getNickname() : ChatServerUtil.randomNickname());
-        user.setSignUpTime(new Date());
+        user.setSignUpTime(String.valueOf(Instant.now()));
         user.setStatus(0);
         user.setRole(UserRoleEnum.BUYER.getCode());
 
@@ -294,8 +295,8 @@ public class UserServiceImpl implements UserService {
         map.put("code", code);
         map.put("msg", msg);
         map.put("userCode", userCode);
-        map.put("userId", userIdStr); // 新增
-        map.put("uid", uid); // 新增
+        map.put("userId", userIdStr);
+        map.put("uid", uid);
 
         return map;
     }
@@ -416,7 +417,7 @@ public class UserServiceImpl implements UserService {
                 user.setPhone(SensitiveInfoDesensitizerUtil.desensitize("phone", user.getPhone()));
                 // 身份证号脱敏（调用通用方法，字段名匹配"idcard"）
                 user.setIDcard(SensitiveInfoDesensitizerUtil.desensitize("idcard", user.getIDcard()));
-                // 新增：邮箱脱敏（调用通用方法，字段名匹配"email"）
+                // 邮箱脱敏（调用通用方法，字段名匹配"email"）
                 user.setEmail(SensitiveInfoDesensitizerUtil.desensitize("email", user.getEmail()));
             }
         }
@@ -676,7 +677,7 @@ public class UserServiceImpl implements UserService {
                             update.set(requestVo.getField(), email);
                         }
                         break;
-                    // 新增手机号校验
+                    // 手机号校验
                     case "phone":
                         String phone = (String) requestVo.getValue();
                         if (phone == null || !ChatServerUtil.isPhone(phone)) {
@@ -687,7 +688,7 @@ public class UserServiceImpl implements UserService {
                             update.set(requestVo.getField(), phone);
                         }
                         break;
-                    // 新增身份证号校验
+                    // 身份证号校验
                     case "IDcard":
                         String idCard = (String) requestVo.getValue();
                         if (idCard == null || !ChatServerUtil.isIDCard(idCard)) {

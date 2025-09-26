@@ -53,7 +53,7 @@ public class JwtLoginAuthFilter extends UsernamePasswordAuthenticationFilter {
     public JwtLoginAuthFilter(AuthenticationManager authenticationManager,
                               MongoTemplate mongoTemplate,
                               OnlineUserService onlineUserService,
-                              JwtUtils jwtUtils) { // 新增参数
+                              JwtUtils jwtUtils) {
         this.authenticationManager = authenticationManager;
         this.mongoTemplate = mongoTemplate;
         this.onlineUserService = onlineUserService;
@@ -84,21 +84,21 @@ public class JwtLoginAuthFilter extends UsernamePasswordAuthenticationFilter {
                                             FilterChain chain,
                                             Authentication authResult) throws IOException, ServletException {
         try {
-            // 1. 读取登录参数（修复 InputStream 重复读取问题，改用 ThreadLocal）
+            // 读取登录参数（修复 InputStream 重复读取问题，改用 ThreadLocal）
             LoginRequestVo lvo = loginRequestVoThreadLocal.get(); // 需提前在 attemptAuthentication 中存入
             if (lvo == null) {
                 ResponseUtil.out(response, R.error().resultEnum(ResultEnum.SYSTEM_ERROR));
                 return;
             }
 
-            // 2. 获取认证用户（此时已为 JwtAuthUser 类型）
+            // 获取认证用户（此时已为 JwtAuthUser 类型）
             JwtAuthUser jwtUser = (JwtAuthUser) authResult.getPrincipal();
             if (jwtUser == null) {
                 ResponseUtil.out(response, R.error().resultEnum(ResultEnum.USER_LOGIN_FAILED));
                 return;
             }
 
-            // 3. 检查 userId 是否为 null（关键防御）
+            // 检查 userId 是否为 null（关键防御）
             ObjectId userId = jwtUser.getUserId();
             if (userId == null) {
                 logger.error("用户ID为null，登录失败");
@@ -106,7 +106,6 @@ public class JwtLoginAuthFilter extends UsernamePasswordAuthenticationFilter {
                 return;
             }
 
-            // 4. 后续逻辑（使用 userId 时确保非 null）
             if (jwtUser.getStatus() == 1 || jwtUser.getStatus() == 2) {
                 ResponseUtil.out(response, R.error().resultEnum(ResultEnum.ACCOUNT_IS_FROZEN_OR_CANCELLED));
                 return;

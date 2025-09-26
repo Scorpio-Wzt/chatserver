@@ -75,7 +75,7 @@ public class SysServiceImpl implements SysService {
     }
 
     /**
-     * 新增敏感消息记录
+     * 敏感消息记录
      */
     @Override
     public void addSensitiveMessage(SensitiveMessage sensitiveMessage) {

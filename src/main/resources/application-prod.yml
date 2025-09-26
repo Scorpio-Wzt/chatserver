@@ -27,6 +27,3 @@ server:
   servlet:
     context-path: /chat
   port: 5555
-fastdfs:
-  nginx:
-    host: https://xxxxx/ # 更换为自己的域名

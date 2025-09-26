@@ -33,7 +33,6 @@ import javax.annotation.Resource;
 
 @Configuration
 @EnableWebSecurity
-// 旧版注解：开启方法级权限（兼容Spring Security 5.6以下版本）
 @EnableGlobalMethodSecurity(prePostEnabled = true) // 核心：开启@PreAuthorize注解
 public class SecurityConfig{
 
@@ -127,9 +126,9 @@ public class SecurityConfig{
     @Bean
     public MethodSecurityExpressionHandler methodSecurityExpressionHandler() {
         DefaultMethodSecurityExpressionHandler handler = new DefaultMethodSecurityExpressionHandler();
-        // 根据你的角色存储格式设置：
-        // 1. 若角色存储为"CUSTOMER_SERVICE"（无前缀）→ 设置为空
-        // 2. 若角色存储为"ROLE_CUSTOMER_SERVICE"（有前缀）→ 保持默认"ROLE_"
+
+        // 若角色存储为"CUSTOMER_SERVICE"（无前缀）→ 设置为空
+        // 若角色存储为"ROLE_CUSTOMER_SERVICE"（有前缀）→ 保持默认"ROLE_"
         handler.setDefaultRolePrefix("");
         return handler;
     }

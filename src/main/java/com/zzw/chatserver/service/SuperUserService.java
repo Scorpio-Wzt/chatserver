@@ -27,7 +27,7 @@ public interface SuperUserService {
     void notExistThenAddSuperUser(SuperUser superUser);
 
     /**
-     * 新增超级用户（密码会自动加密）
+     * 超级用户（密码会自动加密）
      * @param superUser 超级用户实体（原始密码，未加密）
      */
     void addSuperUser(SuperUser superUser);

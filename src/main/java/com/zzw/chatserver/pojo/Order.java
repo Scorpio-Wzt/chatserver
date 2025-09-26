@@ -7,6 +7,9 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.Date;
 
 /**
@@ -34,11 +37,27 @@ public class Order {
 
     private Integer status;          // 订单状态：0-待支付 1-已支付 2-退款中 3-已退款 4-已签收
 
-    private Date createTime;         // 创建时间
+    private String createTime = Instant.now()
+            // 转换为本地时区（如北京时间：UTC+8）
+            .atZone(ZoneId.of("Asia/Shanghai"))
+            // 格式化输出为友好字符串
+            .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
 
-    private Date payTime;            // 支付时间
+    private String payTime = Instant.now()
+            // 转换为本地时区（如北京时间：UTC+8）
+            .atZone(ZoneId.of("Asia/Shanghai"))
+            // 格式化输出为友好字符串
+            .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
 
-    private Date refundTime;         // 退款时间
+    private String refundTime = Instant.now()
+            // 转换为本地时区（如北京时间：UTC+8）
+            .atZone(ZoneId.of("Asia/Shanghai"))
+            // 格式化输出为友好字符串
+            .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
 
-    private Date confirmTime;        // 确认收货时间
+    private String confirmTime = Instant.now()
+            // 转换为本地时区（如北京时间：UTC+8）
+            .atZone(ZoneId.of("Asia/Shanghai"))
+            // 格式化输出为友好字符串
+            .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
 }

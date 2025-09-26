@@ -4,7 +4,6 @@ public interface ConstValueEnum {
     public static final String FRIEND = "FRIEND";
     public static final String GROUP = "GROUP";
     public static final String VALIDATE = "VALIDATE";
-    // 新增：普通消息类型
     public static final String MESSAGE = "MESSAGE";
 
     public static final Integer USERTYPE = 1; //用户

@@ -30,7 +30,6 @@ import java.util.List;
 @Service
 public class ValidateMessageServiceImpl implements ValidateMessageService {
 
-    // 新增：定义Logger实例
     private static final Logger logger = LoggerFactory.getLogger(ValidateMessageServiceImpl.class);
 
     @Resource
@@ -115,7 +114,7 @@ public class ValidateMessageServiceImpl implements ValidateMessageService {
     }
 
     /**
-     * 新增验证消息（避免重复申请）
+     * 验证消息（避免重复申请）
      */
     @Override
     public ValidateMessage addValidateMessage(ValidateMessage validateMessage) {

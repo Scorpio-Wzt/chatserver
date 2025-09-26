@@ -11,6 +11,7 @@ import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
+import java.time.Instant;
 import java.util.Date;
 import java.util.List;
 
@@ -29,7 +30,7 @@ public class SystemNotificationServiceImpl implements SystemNotificationService 
     @Override
     public void sendSystemNotification(SystemNotification notification) {
         // 补全通知基础信息
-        notification.setTime(new Date());
+        notification.setTime(String.valueOf(Instant.now()));
         notification.setRead(false);
 
         // 保存通知到数据库

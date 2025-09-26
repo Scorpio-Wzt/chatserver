@@ -44,19 +44,19 @@ public class UserDetailsServiceImpl implements UserDetailsService {
      */
     @Override
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
-        // 1. 先查询【普通用户】（匹配 username 字段）
+        // 先查询【普通用户】（匹配 username 字段）
         User normalUser = userService.findUserByUsername(username);
         if (normalUser != null) {
             return buildUserDetails(normalUser, normalUser.getUsername(), normalUser.getPassword(), normalUser.getRole());
         }
 
-        // 2. 普通用户不存在，查询【超级用户】（匹配 account 字段）
+        // 普通用户不存在，查询【超级用户】（匹配 account 字段）
         SuperUser superUser = superUserService.existSuperUser(username);
         if (superUser != null) {
             return buildUserDetails(superUser, superUser.getAccount(), superUser.getPassword(), "admin"); // 超级用户角色编码固定为 "0"
         }
 
-        // 3. 两种用户都不存在，抛出异常
+        // 两种用户都不存在，抛出异常
         logger.error("用户认证失败：用户名/账号[{}]不存在", username);
         throw new UsernameNotFoundException("用户名或密码错误");
     }
@@ -66,14 +66,14 @@ public class UserDetailsServiceImpl implements UserDetailsService {
      */
 // 修改 UserDetailsServiceImpl.java 的 buildUserDetails 方法
     private UserDetails buildUserDetails(Object user, String username, String password, String roleCode) {
-        // 1. 创建自定义 JwtAuthUser 实例（继承自业务 User 实体，包含 userId）
+        // 创建自定义 JwtAuthUser 实例（继承自业务 User 实体，包含 userId）
         JwtAuthUser jwtAuthUser = new JwtAuthUser();
         jwtAuthUser.setUsername(username);
         jwtAuthUser.setPassword(password);
 
         boolean isEnabled = true;
 
-        // 2. 处理普通用户（复制 userId 等字段）
+        // 处理普通用户（复制 userId 等字段）
         if (user instanceof User) {
             User normalUser = (User) user;
             // 关键：复制 userId（避免 getUserId() 为 null）
@@ -84,7 +84,7 @@ public class UserDetailsServiceImpl implements UserDetailsService {
             // 校验账号状态
             isEnabled = normalUser.getStatus() != null && normalUser.getStatus() == 0;
         }
-        // 3. 处理超级用户（若超级用户也需要 userId，可自定义逻辑）
+        // 处理超级用户（若超级用户也需要 userId，可自定义逻辑）
         else if (user instanceof SuperUser) {
             SuperUser superUser = (SuperUser) user;
             // 示例：超级用户无 userId，可将 sid 转为 ObjectId 作为 userId
@@ -92,12 +92,12 @@ public class UserDetailsServiceImpl implements UserDetailsService {
             jwtAuthUser.setStatus(0); // 超级用户默认正常状态
         }
 
-        // 4. 校验密码
+        // 校验密码
         if (!StringUtils.hasText(password)) {
             throw new UsernameNotFoundException("账号异常，密码未设置");
         }
 
-        // 5. 设置权限（复用原逻辑）
+        // 设置权限（复用原逻辑）
         jwtAuthUser.setAuthorities(getAuthorities(roleCode));
 
         // 返回 JwtAuthUser 实例，而非内置 User

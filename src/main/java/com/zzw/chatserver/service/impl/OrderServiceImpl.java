@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import javax.annotation.Resource;
 import java.math.BigDecimal;
 import java.text.SimpleDateFormat;
+import java.time.Instant;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -29,8 +30,8 @@ public class OrderServiceImpl implements OrderService {
     @Resource
     private UserService userService;
 
-    // ------------------------------ 订单状态静态常量（替换原ConstValueEnum.ORDER_STATUS_*） ------------------------------
-    // 规则：0=未支付，1=已支付，2=退款中，3=已退款，4=已确认收货（与getOrderStatusDesc描述对应）
+    // ------------------------------------------ 订单状态静态常量---------------------------------------------------
+    // 规则：0=未支付，1=已支付，2=退款中，3=已退款，4=已确认收货
     private static final int ORDER_STATUS_UNPAID = 0;    // 未支付
     private static final int ORDER_STATUS_PAID = 1;      // 已支付
     private static final int ORDER_STATUS_REFUNDING = 2; // 退款中
@@ -38,26 +39,46 @@ public class OrderServiceImpl implements OrderService {
     private static final int ORDER_STATUS_CONFIRMED = 4; // 已确认收货
 
     /**
+     * 根据订单号查询订单（Service层实现）
+     * @param orderNo 订单编号
+     * @return 订单对象
+     * @throws BusinessException 当订单不存在时抛出异常
+     */
+    @Override
+    public Order getOrderByNo(String orderNo) {
+
+        if (orderNo == null || orderNo.trim().isEmpty()) {
+            throw new BusinessException("订单编号不能为空");
+        }
+        Order order = orderDao.findByOrderNo(orderNo.trim());
+        if (order == null) {
+            throw new BusinessException("订单不存在：" + orderNo);
+        }
+
+        return order;
+    }
+
+    /**
      * 确认收货：仅已支付订单可操作，更新订单状态为“已确认”
      */
     @Override
     public void confirmReceipt(String userId, String customerId, String orderNo) {
-        // 1. 查询订单（按订单号唯一匹配）
+        // 查询订单（按订单号唯一匹配）
         Order order = orderDao.findByOrderNo(orderNo);
         if (order == null) {
             throw new BusinessException("订单不存在：订单编号=" + orderNo);
         }
-        // 2. 验证订单归属（防止操作他人订单）
+        // 验证订单归属（防止操作他人订单）
         if (!order.getUserId().equals(userId) || !order.getCustomerId().equals(customerId)) {
             throw new BusinessException("无权操作此订单：订单归属与当前用户/客服不匹配");
         }
-        // 3. 验证订单状态（仅“已支付”订单可确认收货，用静态常量替换原ConstValueEnum）
+        // 验证订单状态（仅“已支付”订单可确认收货，用静态常量替换原ConstValueEnum）
         if (!Objects.equals(order.getStatus(), ORDER_STATUS_PAID)) {
             throw new BusinessException("订单状态异常：仅已支付订单可确认收货，当前状态=" + getOrderStatusDesc(order.getStatus()));
         }
-        // 4. 更新订单状态与确认时间（用静态常量替换）
+        // 更新订单状态与确认时间（用静态常量替换）
         order.setStatus(ORDER_STATUS_CONFIRMED);
-        order.setConfirmTime(new Date());
+        order.setConfirmTime(String.valueOf(Instant.now()));
         orderDao.save(order);
     }
 
@@ -66,7 +87,7 @@ public class OrderServiceImpl implements OrderService {
      */
     @Override
     public Order createOrder(CreateOrderVo createOrderVo) {
-        // 1. 校验客服合法性（复用UserRoleEnum判断，替换原ConstValueEnum.USER_ROLE_CUSTOMER_SERVICE）
+        // 校验客服合法性（复用UserRoleEnum判断，替换原ConstValueEnum.USER_ROLE_CUSTOMER_SERVICE）
         User customer = userService.getUserInfo(createOrderVo.getCustomerId());
         if (customer == null) {
             throw new BusinessException("客服不存在：客服ID=" + createOrderVo.getCustomerId());
@@ -77,15 +98,15 @@ public class OrderServiceImpl implements OrderService {
             throw new BusinessException("客服ID不合法：该用户不是客服角色（当前角色：" + customer.getRole() + "）");
         }
 
-        // 2. 校验订单金额合法性（防止负数或0金额）
+        // 校验订单金额合法性（防止负数或0金额）
         if (createOrderVo.getAmount() == null || createOrderVo.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
             throw new BusinessException("订单金额异常：金额必须大于0（当前金额：" + createOrderVo.getAmount() + "）");
         }
 
-        // 3. 生成唯一订单号（格式：ORD+年月日+6位随机数）
+        // 生成唯一订单号（格式：ORD+年月日+6位随机数）
         String orderNo = generateUniqueOrderNo();
 
-        // 4. 构建订单实体（用静态常量设置默认状态）
+        // 构建订单实体（用静态常量设置默认状态）
         Order order = new Order();
         order.setUserId(createOrderVo.getUserId());
         order.setCustomerId(createOrderVo.getCustomerId());
@@ -93,12 +114,12 @@ public class OrderServiceImpl implements OrderService {
         order.setProductName(createOrderVo.getProductName());
         order.setAmount(createOrderVo.getAmount().doubleValue());
         order.setStatus(ORDER_STATUS_PAID); // 临时默认已支付（对接支付后改为ORDER_STATUS_UNPAID）
-        order.setCreateTime(new Date());
-        order.setPayTime(new Date());
+        order.setCreateTime(String.valueOf(Instant.now()));
+        order.setPayTime(String.valueOf(Instant.now()));
         order.setRefundTime(null);
         order.setConfirmTime(null);
 
-        // 5. 保存订单到数据库
+        // 保存订单到数据库
         return orderDao.save(order);
     }
 
@@ -106,30 +127,33 @@ public class OrderServiceImpl implements OrderService {
      * 申请退款：筛选用户在该客服下的最新已支付订单，更新状态为“退款中”
      */
     @Override
-    public void applyRefund(String userId, String customerId) {
-        // 1. 查询用户在该客服下的所有订单
-        List<Order> userCustomerOrders = orderDao.findByUserIdAndCustomerId(userId, customerId);
-        if (userCustomerOrders.isEmpty()) {
-            throw new BusinessException("无订单可退款：用户ID=" + userId + "，客服ID=" + customerId);
+    public void applyRefund(String userId, String customerId, String orderNo) {
+        // 根据订单号查询订单（精确匹配）
+        Order order = orderDao.findByOrderNo(orderNo);
+        if (order == null) {
+            throw new BusinessException("订单不存在：" + orderNo);
         }
 
-        // 2. 筛选可退款订单（状态为“已支付”且未退款，用静态常量替换）
-        List<Order> refundableOrders = userCustomerOrders.stream()
-                .filter(order -> Objects.equals(order.getStatus(), ORDER_STATUS_PAID))
-                .collect(Collectors.toList());
-        if (refundableOrders.isEmpty()) {
-            throw new BusinessException("无符合条件的可退款订单：仅已支付订单可申请退款");
+        // 校验订单归属（必须属于当前用户和客服）
+        if (!order.getUserId().equals(userId) || !order.getCustomerId().equals(customerId)) {
+            throw new BusinessException("订单归属异常：订单" + orderNo + "不属于用户" + userId + "或客服" + customerId);
         }
 
-        // 3. 取最新的可退款订单（按支付时间倒序）
-        Order latestOrder = refundableOrders.stream()
-                .max(Comparator.comparing(Order::getPayTime))
-                .orElseThrow(() -> new BusinessException("筛选可退款订单异常：无最新订单"));
+        // 校验订单状态（仅已支付订单可申请退款）
+        if (!Objects.equals(order.getStatus(), ORDER_STATUS_PAID)) {
+            throw new BusinessException("订单" + orderNo + "状态异常，当前状态：" + order.getStatus() + "，仅已支付订单可申请退款");
+        }
 
-        // 4. 更新订单状态为“退款中”（用静态常量替换）
-        latestOrder.setStatus(ORDER_STATUS_REFUNDING);
-        latestOrder.setRefundTime(new Date());
-        orderDao.save(latestOrder);
+        // 校验是否已发起过退款（避免重复申请）
+        if (Objects.equals(order.getStatus(), ORDER_STATUS_REFUNDING) ||
+                Objects.equals(order.getStatus(), ORDER_STATUS_REFUNDED)) {
+            throw new BusinessException("订单" + orderNo + "已申请退款，当前状态：" + order.getStatus());
+        }
+
+        // 更新订单状态为“退款中”
+        order.setStatus(ORDER_STATUS_REFUNDING);
+        order.setRefundTime(String.valueOf(Instant.now()));
+        orderDao.save(order);
     }
 
     /**
@@ -137,7 +161,7 @@ public class OrderServiceImpl implements OrderService {
      */
     @Override
     public List<Order> getUserOrdersByCustomer(String userId, String customerId) {
-        // 1. 基础校验（用户/客服存在性，客服角色合法性）
+        // 基础校验（用户/客服存在性，客服角色合法性）
         User user = userService.getUserInfo(userId);
         User customer = userService.getUserInfo(customerId);
         if (user == null) {
@@ -152,7 +176,7 @@ public class OrderServiceImpl implements OrderService {
             throw new BusinessException("客服ID不合法：该用户不是客服角色（当前角色：" + customer.getRole() + "）");
         }
 
-        // 2. 查询订单并按创建时间倒序
+        // 查询订单并按创建时间倒序
         return orderDao.findByUserIdAndCustomerId(userId, customerId).stream()
                 .sorted(Comparator.comparing(Order::getCreateTime).reversed())
                 .collect(Collectors.toList());
@@ -163,7 +187,7 @@ public class OrderServiceImpl implements OrderService {
      */
     @Override
     public void createTestOrder(String userId, String customerId) {
-        // 1. 校验客服合法性（复用UserRoleEnum判断）
+        // 校验客服合法性（复用UserRoleEnum判断）
         User customer = userService.getUserInfo(customerId);
         if (customer == null) {
             throw new BusinessException("客服不存在：客服ID=" + customerId);
@@ -173,13 +197,13 @@ public class OrderServiceImpl implements OrderService {
             throw new BusinessException("客服不合法：该用户不是客服角色（当前角色：" + customer.getRole() + "）");
         }
 
-        // 2. 校验用户合法性
+        // 校验用户合法性
         User user = userService.getUserInfo(userId);
         if (user == null) {
             throw new BusinessException("用户不存在：用户ID=" + userId);
         }
 
-        // 3. 构建测试订单（用静态常量设置状态）
+        // 构建测试订单（用静态常量设置状态）
         Order testOrder = new Order();
         testOrder.setOrderNo("TEST-" + System.currentTimeMillis() + "-" + new Random().nextInt(1000));
         testOrder.setUserId(userId);
@@ -187,10 +211,10 @@ public class OrderServiceImpl implements OrderService {
         testOrder.setProductName("测试商品-" + new Random().nextInt(100));
         testOrder.setAmount(99.9 + new Random().nextDouble() * 100); // 随机金额（99.9~199.9）
         testOrder.setStatus(ORDER_STATUS_PAID); // 测试订单默认已支付
-        testOrder.setCreateTime(new Date());
-        testOrder.setPayTime(new Date());
+        testOrder.setCreateTime(String.valueOf(Instant.now()));
+        testOrder.setPayTime(String.valueOf(Instant.now()));
 
-        // 4. 保存测试订单
+        // 保存测试订单
         orderDao.save(testOrder);
     }
 
@@ -220,12 +244,12 @@ public class OrderServiceImpl implements OrderService {
      * @return 可读的状态描述文本
      */
     private String getOrderStatusDesc(Integer status) {
-        // 1. 处理status为null的情况
+        // 处理status为null的情况
         if (status == null) {
             return "未知状态（状态值为null）";
         }
 
-        // 2. 传统switch语句（case后使用final静态常量，Java 8可识别）
+        // 传统switch语句（case后使用final静态常量，Java 8可识别）
         String statusDesc;
         switch (status) {
             case ORDER_STATUS_UNPAID:

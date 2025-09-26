@@ -59,14 +59,14 @@ public class JwtUtils {
      * @return Claims 解析后的用户信息；若解析失败，返回null（通过日志输出错误原因）
      */
     public Claims parseJwt(String token) {
-        // 1. Token非空校验
+        // Token非空校验
         if (!StringUtils.hasText(token)) {
             logger.error("JWT解析失败：Token为空");
             return null;
         }
 
         try {
-            // 2. 解析Token（HS256算法，用SECRET验证签名）
+            // 解析Token（HS256算法，用SECRET验证签名）
             return Jwts.parser()
                     .setSigningKey(SECRET.getBytes()) // 密钥与生成时一致（必须用字节数组）
                     .parseClaimsJws(token) // 解析Token（自动校验签名、格式、过期时间）
@@ -103,11 +103,11 @@ public class JwtUtils {
         JwtUtils jwtUtils = new JwtUtils();
         jwtUtils.SECRET = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"; // 替换为32位密钥
 
-        // 1. 生成Token
+        // 生成Token
         String token = jwtUtils.createJwt("64f2a1b3c8d7e6f7a1b2c3d", "super_admin");
         System.out.println("生成的Token：" + token);
 
-        // 2. 解析Token
+        // 解析Token
         Claims claims = jwtUtils.parseJwt(token);
         if (claims != null) {
             System.out.println("解析的用户ID：" + claims.get("userId"));

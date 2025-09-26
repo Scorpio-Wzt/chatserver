@@ -26,6 +26,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.util.HtmlUtils;
 
 import javax.annotation.Resource;
+import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -216,7 +217,7 @@ public class SocketIoListener {
         }
 
         try {
-            // 1. 单聊房间（基于好友关系）
+            // 单聊房间（基于好友关系）
             List<MyFriendListResultVo> friends = goodFriendService.getMyFriendsList(uid);
             if (friends != null && !friends.isEmpty()) {
                 for (MyFriendListResultVo friend : friends) {
@@ -226,7 +227,7 @@ public class SocketIoListener {
                 }
             }
 
-            // 2. 群聊房间（基于用户加入的群组）
+            // 群聊房间（基于用户加入的群组）
             User user = userService.getUserInfo(uid);
             if (user != null && !StringUtils.isEmpty(user.getUsername())) {
                 List<MyGroupResultVo> myGroups = groupUserService.getGroupUsersByUserName(user.getUsername());
@@ -263,7 +264,7 @@ public class SocketIoListener {
                 SimpleUser simpleUser = onlineUserService.getSimpleUserByClientId(clientId);
                 if (simpleUser != null) {
                     onlineUserService.removeClientAndUidInSet(clientId, simpleUser.getUid());
-                    long onlineTime = DateUtil.getTimeDelta(simpleUser.getLastLoginTime(), new Date());
+                    long onlineTime = DateUtil.getTimeDelta(Date.from(Instant.parse(simpleUser.getLastLoginTime())), new Date());
                     userService.updateOnlineTime(onlineTime, simpleUser.getUid());
                 }
             } finally {
@@ -408,10 +409,10 @@ public class SocketIoListener {
         try {
             logger.info("用户{}上线，开始推送离线消息", uid);
 
-            // 1. 推送单聊离线消息
+            // 推送单聊离线消息
             pushOfflineSingleMessages(client, uid);
 
-            // 2. 推送群聊离线消息
+            // 推送群聊离线消息
             pushOfflineGroupMessages(client, uid);
         } catch (Exception e) {
             logger.error("推送离线消息异常，uid={}", uid, e);
@@ -566,7 +567,7 @@ public class SocketIoListener {
     @OnEvent("sendNewMessage")
     public void sendNewMessage(SocketIOClient client, NewMessageVo newMessageVo) {
         try {
-            // 1. 基础参数校验
+            // 基础参数校验
             if (!validateNewMessageParams(client, newMessageVo)) {
                 return;
             }
@@ -574,16 +575,16 @@ public class SocketIoListener {
             String roomId = newMessageVo.getRoomId();
             logger.info("处理新消息，senderId={}, roomId={}", senderId, roomId);
 
-            // 2. 身份验证（防止会话劫持）
+            // 身份验证（防止会话劫持）
 //            if (!validateSenderIdentity(senderId)) {
 //                client.sendEvent(EVENT_SEND_FAILED, ERR_IDENTITY_VERIFY_FAILED);
 //                return;
 //            }
 
-            // 3. 消息安全处理（XSS防御+敏感词过滤）
+            // 消息安全处理（XSS防御+敏感词过滤）
             processMessageSecurity(newMessageVo);
 
-            // 4. 单聊/群聊特殊处理
+            // 单聊/群聊特殊处理
             if (ConstValueEnum.FRIEND.equals(newMessageVo.getConversationType())) {
                 // 单聊：验证好友关系+生成服务卡片
                 if (!processSingleChatSpecial(newMessageVo, client)) {
@@ -594,13 +595,13 @@ public class SocketIoListener {
                 clearCardInfo(newMessageVo);
             }
 
-            // 5. 处理已读用户列表（发送者默认已读+在线接收者）
+            // 处理已读用户列表（发送者默认已读+在线接收者）
             handleReadUsers(newMessageVo);
 
-            // 6. 保存消息到数据库
+            // 保存消息到数据库
             saveMessageToDb(newMessageVo);
 
-            // 7. 转发消息给房间内其他客户端
+            // 转发消息给房间内其他客户端
             sendToOtherClients(client, roomId, EVENT_RECEIVE_MSG, newMessageVo);
         } catch (Exception e) {
             logger.error("处理发送新消息事件异常", e);
@@ -707,7 +708,7 @@ public class SocketIoListener {
                 sensitiveMsg.setSenderName(newMessageVo.getSenderName());
                 sensitiveMsg.setMessage(originalMsg);
                 sensitiveMsg.setType(ConstValueEnum.MESSAGE);
-                sensitiveMsg.setTime(new Date());
+                sensitiveMsg.setTime(String.valueOf(Instant.now()));
                 sysService.addSensitiveMessage(sensitiveMsg);
                 logger.warn("消息包含敏感词：发送者={}, 原内容={}", newMessageVo.getSenderId(), originalMsg);
             } catch (Exception e) {
@@ -798,7 +799,7 @@ public class SocketIoListener {
             SingleMessage singleMessage = new SingleMessage();
             BeanUtils.copyProperties(newMessageVo, singleMessage);
             singleMessage.setSenderId(new ObjectId(newMessageVo.getSenderId()));
-            singleMessage.setTime(new Date());
+            singleMessage.setTime(String.valueOf(Instant.now()));
             singleMessageService.addNewSingleMessage(singleMessage);
             logger.debug("保存单聊消息：{}", singleMessage.getId());
         } else if (ConstValueEnum.GROUP.equals(newMessageVo.getConversationType())) {
@@ -806,7 +807,7 @@ public class SocketIoListener {
             GroupMessage groupMessage = new GroupMessage();
             BeanUtils.copyProperties(newMessageVo, groupMessage);
             groupMessage.setSenderId(new ObjectId(newMessageVo.getSenderId()));
-            groupMessage.setTime(new Date());
+            groupMessage.setTime(String.valueOf(Instant.now()));
             groupMessageService.addNewGroupMessage(groupMessage);
             logger.debug("保存群聊消息：{}", groupMessage.getId());
         }
@@ -916,7 +917,7 @@ public class SocketIoListener {
                     sensitiveMsg.setSenderName(validateMessage.getSenderName());
                     sensitiveMsg.setMessage(originalMsg);
                     sensitiveMsg.setType(ConstValueEnum.VALIDATE);
-                    sensitiveMsg.setTime(new Date());
+                    sensitiveMsg.setTime(String.valueOf(Instant.now()));
                     sysService.addSensitiveMessage(sensitiveMsg);
                 } catch (Exception e) {
                     logger.error("记录敏感验证消息异常", e);

@@ -12,6 +12,13 @@ import java.util.List;
 public interface OrderService {
 
     /**
+     * 通过订单号查询订单
+     * @param orderNo
+     * @return
+     */
+    Order getOrderByNo(String orderNo);
+
+    /**
      * 创建订单（仅客服调用，强制绑定用户与客服）
      * @param createOrderVo 订单创建参数（含用户ID、客服ID、商品信息等）
      * @return 保存后的完整订单实体
@@ -25,7 +32,7 @@ public interface OrderService {
      * @param customerId 绑定的客服ID
      * @throws BusinessException 当无符合条件的可退款订单（如未支付、已退款）时抛出
      */
-    void applyRefund(String userId, String customerId);
+    void applyRefund(String userId, String customerId, String  orderNo);
 
     /**
      * 查询订单（用户本人/客服均可调用，按创建时间倒序）

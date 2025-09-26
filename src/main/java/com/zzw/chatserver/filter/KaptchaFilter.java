@@ -30,13 +30,13 @@ public class KaptchaFilter extends GenericFilter {
         String requestURI = req.getServletPath();
         String method = req.getMethod();
 
-        // 1. 登录接口（/chat/user/register）直接放行，不校验验证码
+        // 登录接口（/chat/user/register）直接放行，不校验验证码
         if ("POST".equals(method) && "/user/register".equals(requestURI)) {
             filterChain.doFilter(req, resp);
             return;
         }
 
-        // 2. 对普通登录（/user/login) 校验验证码
+        // 对普通登录（/user/login) 校验验证码
         if ("POST".equals(method) && ("/user/login".equals(requestURI))) {
             String kaptchaOwner = CookieUtil.getValue(req, "kaptchaOwner");
             ServletRequest requestWrapper = new HttpServletRequestReplacedWrapper(req); // 包装请求体
@@ -57,7 +57,7 @@ public class KaptchaFilter extends GenericFilter {
             // 验证码校验通过，用包装后的请求继续传递
             filterChain.doFilter(requestWrapper, resp);
         } else {
-            // 3. 其他所有请求直接放行
+            // 其他所有请求直接放行
             filterChain.doFilter(req, resp); // 始终用filterChain传递
         }
     }

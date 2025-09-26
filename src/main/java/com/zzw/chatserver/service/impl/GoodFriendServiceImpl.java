@@ -27,6 +27,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import javax.annotation.Resource;
+import java.time.Instant;
 import java.util.*;
 
 /**
@@ -54,7 +55,7 @@ public class GoodFriendServiceImpl implements GoodFriendService {
 
     @Override
     public List<SingleRecentConversationResultVo> getRecentChatFriends(RecentConversationVo recentConversationVo) {
-        // 1. 参数校验与处理
+        // 参数校验与处理
         String currentUserId = recentConversationVo.getUserId();
         if (currentUserId == null || !ObjectId.isValid(currentUserId)) {
             throw new BusinessException(ResultEnum.INVALID_USER_ID, "用户ID格式错误");
@@ -124,7 +125,7 @@ public class GoodFriendServiceImpl implements GoodFriendService {
         );
         List<RecentChatFriendGroupVo> groupVos = results.getMappedResults();
 
-        // 3. 转换结果（无需分页处理，直接映射）
+        // 转换结果（无需分页处理，直接映射）
         List<SingleRecentConversationResultVo> resultList = new ArrayList<>();
         for (RecentChatFriendGroupVo group : groupVos) {
             if (group.getOtherUserInfo() == null || group.getOtherUserInfo().isEmpty()) {
@@ -202,7 +203,7 @@ public class GoodFriendServiceImpl implements GoodFriendService {
             throw new IllegalArgumentException("用户ID格式错误");
         }
 
-        // 1. 校验正向（A→B）和反向（B→A）关系是否已存在
+        // 校验正向（A→B）和反向（B→A）关系是否已存在
         Query queryForward = Query.query(
                 Criteria.where("userM").is(userM).and("userY").is(userY)
         );
@@ -213,23 +214,23 @@ public class GoodFriendServiceImpl implements GoodFriendService {
         GoodFriend existingForward = mongoTemplate.findOne(queryForward, GoodFriend.class);
         GoodFriend existingReverse = mongoTemplate.findOne(queryReverse, GoodFriend.class);
 
-        // 2. 若双向关系都不存在，则创建并保存
+        // 若双向关系都不存在，则创建并保存
         if (existingForward == null && existingReverse == null) {
-            // 2.1 保存正向关系（A→B）
-            goodFriend.setCreateDate(new Date()); // 补充创建时间（如果需要）
+            // 保存正向关系（A→B）
+            goodFriend.setCreateDate(String.valueOf(Instant.now())); // 补充创建时间（如果需要）
             goodFriendDao.save(goodFriend);
 
-            // 2.2 创建并保存反向关系（B→A）
+            // 创建并保存反向关系（B→A）
             GoodFriend reverseFriend = new GoodFriend();
             reverseFriend.setUserM(userY);       // 原接收方变为发起方
             reverseFriend.setUserY(userM);       // 原发起方变为接收方
-            reverseFriend.setCreateDate(new Date()); // 与正向关系同时间
+            reverseFriend.setCreateDate(String.valueOf(Instant.now())); // 与正向关系同时间
             // 若有其他属性（如备注、分组），也需要同步设置
             // reverseFriend.setRemark(goodFriend.getRemark());
 
             goodFriendDao.save(reverseFriend);
 
-            // 3. 双向添加到"我的好友"分组
+            // 双向添加到"我的好友"分组
             modifyNewUserFenZu(userM.toString(), userY.toString());
             modifyNewUserFenZu(userY.toString(), userM.toString());
         }

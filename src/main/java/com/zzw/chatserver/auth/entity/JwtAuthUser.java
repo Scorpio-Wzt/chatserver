@@ -26,7 +26,6 @@ public class JwtAuthUser extends User implements UserDetails, Serializable {
 
     // 核心构造方法：通过 User 实例创建 JwtAuthUser，自动复用字段并生成权限
     public JwtAuthUser(User user) {
-        // 1. 复用 User 实体的核心字段（需确保 User 类有对应的 setter 方法）
         super.setUserId(user.getUserId());
         super.setUid(user.getUid());
         super.setUsername(user.getUsername());
@@ -35,9 +34,8 @@ public class JwtAuthUser extends User implements UserDetails, Serializable {
         super.setRole(user.getRole());
         super.setPhoto(user.getPhoto());
         super.setNickname(user.getNickname());
-        // 其他需复用的字段（如 email、sex 等）按需添加
 
-        // 2. 根据 User 的角色生成 Spring Security 权限
+        // 根据 User 的角色生成 Spring Security 权限
         this.authorities = buildAuthorities(user.getRole());
     }
 
@@ -48,20 +46,20 @@ public class JwtAuthUser extends User implements UserDetails, Serializable {
      */
     private Collection<? extends GrantedAuthority> buildAuthorities(String role) {
         List<SimpleGrantedAuthority> authorities = new ArrayList<>();
-        // 1. 处理角色编码为空/无效的情况（默认赋予普通用户权限）
+        // 处理角色编码为空/无效的情况（默认赋予普通用户权限）
         if (role == null || role.trim().isEmpty()) {
             authorities.add(new SimpleGrantedAuthority("ROLE_USER"));
             return authorities;
         }
 
-        // 2. 根据角色编码获取 UserRoleEnum 实例（避免硬编码字符串比较）
+        // 根据角色编码获取 UserRoleEnum 实例（避免硬编码字符串比较）
         UserRoleEnum userRole = UserRoleEnum.fromCode(role.trim());
         if (userRole == null) { // 未知角色，默认普通用户
             authorities.add(new SimpleGrantedAuthority("ROLE_USER"));
             return authorities;
         }
 
-        // 3. 按角色分配权限（管理员继承客服权限）
+        // 按角色分配权限（管理员继承客服权限）
         if (userRole.isAdmin()) { // 管理员：拥有管理员权限 + 客服权限
             authorities.add(new SimpleGrantedAuthority("ROLE_ADMIN"));
             authorities.add(new SimpleGrantedAuthority("ROLE_CUSTOMER_SERVICE"));

@@ -6,6 +6,7 @@ import com.zzw.chatserver.pojo.vo.IsReadMessageRequestVo;
 import com.zzw.chatserver.pojo.vo.SingleHistoryResultVo;
 import com.zzw.chatserver.pojo.vo.SingleMessageResultVo;
 import com.zzw.chatserver.service.SingleMessageService;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Sort;
 import org.bson.types.ObjectId;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -14,13 +15,22 @@ import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
+import org.springframework.validation.annotation.Validated;
 
 import javax.annotation.Resource;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.stream.Collectors;
 
 @Service
+@Slf4j // 引入日志
 public class SingleMessageServiceImpl implements SingleMessageService {
 
     @Resource
@@ -37,7 +47,7 @@ public class SingleMessageServiceImpl implements SingleMessageService {
             return;
         }
 
-        // 1. 转换消息ID为ObjectId（MongoDB主键类型）
+        // 转换消息ID为ObjectId（MongoDB主键类型）
         List<ObjectId> objectIds = messageIds.stream()
                 .filter(id -> !StringUtils.isEmpty(id) && ObjectId.isValid(id))
                 .map(ObjectId::new)
@@ -46,16 +56,16 @@ public class SingleMessageServiceImpl implements SingleMessageService {
             return;
         }
 
-        // 2. 构建查询条件：消息ID在列表中 + 接收者是当前用户（避免标记其他用户的消息）
+        // 构建查询条件：消息ID在列表中 + 接收者是当前用户（避免标记其他用户的消息）
         Criteria criteria = Criteria.where("_id").in(objectIds)
                 .and("receiverId").is(userId)
                 .and("isReadUser").nin(userId); // 只更新未读的消息
 
-        // 3. 构建更新操作：将当前用户ID加入isReadUser列表
+        // 构建更新操作：将当前用户ID加入isReadUser列表
         Update update = new Update();
         update.addToSet("isReadUser", userId);
 
-        // 4. 批量更新消息状态
+        // 批量更新消息状态
         mongoTemplate.updateMulti(
                 Query.query(criteria),
                 update,
@@ -102,17 +112,27 @@ public class SingleMessageServiceImpl implements SingleMessageService {
 
     @Override
     public List<SingleMessageResultVo> getRecentMessage(String roomId, int pageIndex, int pageSize) {
-        if (roomId == null || pageIndex < 0 || pageSize <= 0) {
-            return new ArrayList<>();
+        // 参数校验优化：pageIndex从1开始，避免小于1的无效值
+        if (roomId == null || roomId.trim().isEmpty() || pageIndex < 1 || pageSize <= 0) {
+            log.warn("获取最近单聊消息参数无效：roomId={}, pageIndex={}, pageSize={}", roomId, pageIndex, pageSize);
+            return Collections.emptyList(); // 返回空列表而非new ArrayList()，更高效
         }
-        Query query = Query.query(Criteria.where("roomId").is(roomId))
-                .with(Sort.by(Sort.Direction.DESC, "_id"))
-                .skip((long) pageIndex * pageSize)
+
+        // 构建查询条件：按房间ID匹配，按消息发送时间倒序（最新消息优先）
+        Query query = Query.query(Criteria.where("roomId").is(roomId.trim())) // trim()处理避免空格问题
+                .with(Sort.by(Sort.Direction.DESC, "time")) // 核心修改：按time字段倒序
+                .skip((long) (pageIndex - 1) * pageSize) // 修正分页：pageIndex从1开始时，跳过前(pageIndex-1)*pageSize条
                 .limit(pageSize);
 
         List<SingleMessage> messages = mongoTemplate.find(query, SingleMessage.class, "singlemessages");
-        return messages.stream().map(this::convertToVo).collect(Collectors.toList());
+        log.info("查询单聊消息成功：roomId={}, 页码={}, 条数={}, 实际返回={}条",
+                roomId, pageIndex, pageSize, messages.size());
+
+        return messages.stream()
+                .map(this::convertToVo)
+                .collect(Collectors.toList());
     }
+
 
     @Override
     public SingleHistoryResultVo getSingleHistoryMsg(HistoryMsgRequestVo requestVo) {
@@ -172,7 +192,29 @@ public class SingleMessageServiceImpl implements SingleMessageService {
         vo.setSenderName(message.getSenderName());
         vo.setSenderNickname(message.getSenderNickname());
         vo.setSenderAvatar(message.getSenderAvatar());
-        vo.setTime(message.getTime());
+        // 将UTC时间（Instant）转换为本地时区（如UTC+8）
+        if (message.getTime() != null && !message.getTime().trim().isEmpty()) {
+            try {
+                // 定义匹配 "Fri Sep 26 10:18:46 CST 2025" 格式的解析器
+                DateTimeFormatter inputFormatter = DateTimeFormatter.ofPattern(
+                        "EEE MMM dd HH:mm:ss zzz yyyy",
+                        Locale.US  // 必须使用英文Locale解析英文月份/星期
+                );
+                // 解析原始时间字符串为ZonedDateTime（包含原始时区信息）
+                ZonedDateTime inputTime = ZonedDateTime.parse(message.getTime().trim(), inputFormatter);
+
+                // 转换为目标时区（Asia/Shanghai = UTC+8）
+                ZonedDateTime shanghaiTime = inputTime.withZoneSameInstant(ZoneId.of("Asia/Shanghai"));
+
+                // 格式化输出为"yyyy-MM-dd HH:mm:ss"
+                DateTimeFormatter outputFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+                vo.setTime(shanghaiTime.format(outputFormatter));
+            } catch (DateTimeParseException e) {
+                // 解析失败时记录日志并返回原始值，避免影响整体功能
+                log.error("时间解析失败: 原始时间={}, 错误={}", message.getTime(), e.getMessage());
+                vo.setTime(message.getTime()); // 保留原始值便于排查问题
+            }
+        }
         vo.setFileRawName(message.getFileRawName());
         vo.setMessage(message.getMessage());
         vo.setMessageType(message.getMessageType());

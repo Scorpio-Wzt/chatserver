@@ -1,11 +1,13 @@
 package com.zzw.chatserver.service.impl;
 
+import com.zzw.chatserver.common.exception.BusinessException;
 import com.zzw.chatserver.dao.GroupMessageDao;
 import com.zzw.chatserver.pojo.GroupMessage;
 import com.zzw.chatserver.pojo.vo.GroupHistoryResultVo;
 import com.zzw.chatserver.pojo.vo.GroupMessageResultVo;
 import com.zzw.chatserver.pojo.vo.HistoryMsgRequestVo;
 import com.zzw.chatserver.service.GroupMessageService;
+import lombok.extern.slf4j.Slf4j;
 import org.bson.types.ObjectId;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -16,6 +18,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import javax.annotation.Resource;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.*;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -25,6 +32,7 @@ import java.util.stream.Collectors;
  * 实现GroupMessageService接口定义的群聊消息操作，依赖DAO层和MongoTemplate完成数据交互
  */
 @Service
+@Slf4j
 public class GroupMessageServiceImpl implements GroupMessageService {
 
     @Resource
@@ -45,7 +53,7 @@ public class GroupMessageServiceImpl implements GroupMessageService {
             return;
         }
 
-        // 1. 转换消息ID为ObjectId（MongoDB主键类型）
+        // 转换消息ID为ObjectId（MongoDB主键类型）
         List<ObjectId> objectIds = messageIds.stream()
                 .filter(id -> !StringUtils.isEmpty(id) && ObjectId.isValid(id))
                 .map(ObjectId::new)
@@ -54,16 +62,16 @@ public class GroupMessageServiceImpl implements GroupMessageService {
             return;
         }
 
-        // 2. 构建查询条件：房间ID匹配 + 消息ID在列表中 + 未读（isReadUser不含当前用户）
+        // 构建查询条件：房间ID匹配 + 消息ID在列表中 + 未读（isReadUser不含当前用户）
         Criteria criteria = Criteria.where("roomId").is(roomId)
                 .and("_id").in(objectIds)
                 .and("isReadUser").nin(userId);
 
-        // 3. 构建更新操作：将当前用户ID加入isReadUser列表
+        // 构建更新操作：将当前用户ID加入isReadUser列表
         Update update = new Update();
         update.addToSet("isReadUser", userId);
 
-        // 4. 批量更新消息状态
+        // 批量更新消息状态
         mongoTemplate.updateMulti(
                 Query.query(criteria),
                 update,
@@ -131,12 +139,49 @@ public class GroupMessageServiceImpl implements GroupMessageService {
 
         // 3. 按日期筛选
         if (groupHistoryVo.getDate() != null) {
-            Calendar calendar = new GregorianCalendar();
-            calendar.setTime(groupHistoryVo.getDate());
-            calendar.add(Calendar.DATE, 1);
-            Date tomorrow = calendar.getTime();
-            cri1.and("time").gte(groupHistoryVo.getDate()).lt(tomorrow);
+            try {
+                String dateStr = groupHistoryVo.getDate().trim();
+                Instant inputInstant;
+
+                // 定义CST格式解析器（英文星期+月份+时区）
+                DateTimeFormatter cstFormatter = DateTimeFormatter.ofPattern(
+                        "EEE MMM dd HH:mm:ss zzz yyyy",
+                        Locale.US
+                );
+
+                // 格式识别与解析
+                if (dateStr.matches("^[A-Za-z]{3} [A-Za-z]{3} \\d{2} \\d{2}:\\d{2}:\\d{2} [A-Z]{3} \\d{4}$")) {
+                    // 解析CST格式：Fri Sep 26 10:18:46 CST 2025
+                    ZonedDateTime cstTime = ZonedDateTime.parse(dateStr, cstFormatter);
+                    inputInstant = cstTime.toInstant();
+                } else {
+                    // 解析ISO格式（如2025-09-26T01:02:38Z）
+                    // 注意：Instant.parse()只接受1个参数，默认使用ISO格式
+                    inputInstant = Instant.parse(dateStr);
+                }
+
+                // 计算当天时间范围
+                ZoneId targetZone = ZoneId.of("Asia/Shanghai");
+                ZonedDateTime localTime = ZonedDateTime.ofInstant(inputInstant, targetZone);
+
+                ZonedDateTime dayStart = localTime.toLocalDate().atStartOfDay(targetZone);
+                ZonedDateTime nextDayStart = dayStart.plusDays(1);
+
+                Instant startInstant = dayStart.toInstant();
+                Instant endInstant = nextDayStart.toInstant();
+
+                cri1.and("time").gte(startInstant).lt(endInstant);
+
+            } catch (DateTimeParseException e) {
+                log.error("时间格式解析错误：{}", groupHistoryVo.getDate(), e);
+                throw new BusinessException("无效的时间格式，请使用以下格式：\n" +
+                        "1. 英文日期（如Fri Sep 26 10:18:46 CST 2025）\n" +
+                        "2. ISO标准格式（如2025-09-26T01:02:38Z）");
+            }
         }
+
+
+
 
         // 4. 构建最终查询对象
         Query query = new Query();

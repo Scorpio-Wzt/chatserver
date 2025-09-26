@@ -28,13 +28,13 @@ public interface SysService {
     List<SystemUserResponseVo> getSysUsers();
 
     /**
-     * 新增用户反馈
+     * 用户反馈
      * @param feedBack 反馈实体（含反馈内容、用户信息等）
      */
     void addFeedBack(FeedBack feedBack);
 
     /**
-     * 新增敏感消息记录（含敏感词的消息）
+     * 敏感消息记录（含敏感词的消息）
      * @param sensitiveMessage 敏感消息实体（含发送者、消息内容、时间等）
      */
     void addSensitiveMessage(SensitiveMessage sensitiveMessage);
