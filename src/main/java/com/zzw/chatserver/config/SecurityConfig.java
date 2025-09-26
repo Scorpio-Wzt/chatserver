@@ -1,5 +1,6 @@
 package com.zzw.chatserver.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zzw.chatserver.auth.UnAuthEntryPoint;
 import com.zzw.chatserver.filter.JwtLoginAuthFilter;
 import com.zzw.chatserver.filter.JwtPreAuthFilter;
@@ -87,6 +88,9 @@ public class SecurityConfig{
     @Autowired
     private UnAuthEntryPoint unAuthEntryPoint;
 
+    @Autowired
+    private ObjectMapper objectMapper;
+
     @Bean
     public BCryptPasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
@@ -132,7 +136,7 @@ public class SecurityConfig{
                 .permitAll()
                 .and()
                 .addFilterBefore(
-                        new KaptchaFilter(kaptchaRedisTemplate), // 使用新名称的Bean
+                        new KaptchaFilter(kaptchaRedisTemplate, objectMapper), // 使用新名称的Bean
                         UsernamePasswordAuthenticationFilter.class
                 )
                 .addFilterBefore(

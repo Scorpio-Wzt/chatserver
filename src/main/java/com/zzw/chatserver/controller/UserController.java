@@ -16,6 +16,7 @@ import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.security.access.AccessDeniedException;
@@ -56,7 +57,7 @@ public class UserController {
     private String contextPath;
 
     @Resource
-    private RedisTemplate<String, String> redisTemplate;
+    private RedisTemplate<String, String> kaptchaRedisTemplate;
 
     /**
      * 获取验证码（用于注册/登录验证）
@@ -76,9 +77,11 @@ public class UserController {
             String verificationCode = ChatServerUtil.generatorCode();
             String redisKey = RedisKeyUtil.getKaptchaKey(kaptchaOwner);
             // redis 有效时间为 60s
-            redisTemplate.opsForValue().set(redisKey, verificationCode, 60, TimeUnit.SECONDS);
+            kaptchaRedisTemplate.opsForValue().set(redisKey, verificationCode, 60, TimeUnit.SECONDS);
 
             log.info("生成验证码成功：owner={}, code={}", kaptchaOwner, verificationCode);
+            // 在UserController的getCode方法中添加
+            log.debug("当前RedisTemplate的value序列化器: {}", kaptchaRedisTemplate.getValueSerializer().getClass().getName());
             return R.ok().data("code", verificationCode);
         } catch (Exception e) {
             log.error("生成验证码失败", e);

@@ -175,7 +175,6 @@ public class UserServiceImpl implements UserService {
         user.setCode(String.valueOf(accountPool.getCode() + ConstValueEnum.INITIAL_NUMBER));
         user.setPhoto(rVo.getAvatar());
         user.setNickname(rVo.getNickname() != null ? rVo.getNickname() : ChatServerUtil.randomNickname());
-        user.setSignUpTime(String.valueOf(Instant.now()));
         user.setStatus(0);
         user.setRole(UserRoleEnum.CUSTOMER_SERVICE.getCode());
 
@@ -269,7 +268,6 @@ public class UserServiceImpl implements UserService {
         user.setCode(String.valueOf(accountPool.getCode() + ConstValueEnum.INITIAL_NUMBER));
         user.setPhoto(rVo.getAvatar());
         user.setNickname(rVo.getNickname() != null ? rVo.getNickname() : ChatServerUtil.randomNickname());
-        user.setSignUpTime(String.valueOf(Instant.now()));
         user.setStatus(0);
         user.setRole(UserRoleEnum.BUYER.getCode());
 
