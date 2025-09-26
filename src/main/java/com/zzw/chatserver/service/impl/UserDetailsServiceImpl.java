@@ -117,8 +117,6 @@ public class UserDetailsServiceImpl implements UserDetailsService {
         switch (roleCode) {
             case "admin":  // 超级管理员（ADMIN）
                 authorities.add(new SimpleGrantedAuthority("ROLE_ADMIN"));
-                // 可选：超级管理员自动拥有客服权限
-                authorities.add(new SimpleGrantedAuthority("ROLE_CUSTOMER_SERVICE"));
                 break;
             case "customer_service":  // 客服（CUSTOMER_SERVICE）
                 authorities.add(new SimpleGrantedAuthority("ROLE_CUSTOMER_SERVICE"));
