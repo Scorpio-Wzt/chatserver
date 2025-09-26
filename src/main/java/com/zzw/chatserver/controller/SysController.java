@@ -29,6 +29,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -102,6 +103,12 @@ public class SysController {
                 && "anonymousUser".equals(authentication.getPrincipal())) {
             log.warn("权限校验失败：匿名用户无权限操作");
             throw new AccessDeniedException("权限不足，请使用管理员账号登录");
+        }
+
+        // 如果允许的角色为空数组，表示“仅需登录即可，不限制角色”
+        if (allowedRoles == null || allowedRoles.length == 0) {
+            log.debug("权限校验通过：仅需登录状态，不限制角色");
+            return; // 直接通过校验
         }
 
         // 提取用户拥有的角色列表
@@ -276,23 +283,58 @@ public class SysController {
     }
 
     /**
-     * 用户反馈
+     * 用户反馈（仅登录用户可提交）
      */
     @PostMapping("/addFeedBack")
-    @ApiOperation(value = "提交用户反馈", notes = "用户提交使用过程中的问题或建议")
+    @ApiOperation(value = "提交用户反馈", notes = "仅登录用户可提交使用过程中的问题或建议，自动关联当前登录用户ID")
     public R addFeedBack(
-            @ApiParam(value = "用户反馈信息", required = true)
+            @ApiParam(value = "用户反馈信息（无需手动填写userId，会自动关联当前登录用户）", required = true)
             @RequestBody @Valid FeedBack feedBack) {
         try {
+            // 校验登录状态（复用现有方法，允许所有已登录用户）
+            checkHasAnyRole(new String[0]);
+
+            // 获取当前登录用户信息（适配默认User类）
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            Object principal = authentication.getPrincipal();
+
+            // 提取用户ID（假设username就是用户ID）
+            String currentUserId;
+            if (principal instanceof User) {
+                // 处理Spring Security默认的User类
+                currentUserId = ((User) principal).getUsername();
+            } else if (principal instanceof String) {
+                // 极端情况：principal直接是用户名（很少见）
+                currentUserId = (String) principal;
+            } else {
+                // 处理其他可能的自定义用户类（根据实际情况补充）
+                log.error("无法识别的用户信息类型：{}", principal.getClass().getName());
+                return R.error().message("系统异常，无法获取用户信息");
+            }
+
+            // 校验用户ID有效性
+            if (currentUserId == null || currentUserId.trim().isEmpty()) {
+                log.error("获取当前登录用户ID失败");
+                return R.error().message("系统异常，无法获取用户信息");
+            }
+
+            // 强制关联当前登录用户ID
+            feedBack.setUserId(currentUserId);
+
+            // 提交反馈
             log.info("收到用户反馈：userId={}, 内容摘要={}",
-                    feedBack.getUserId(), getContentSummary(feedBack.getFeedBackContent()));
+                    currentUserId, getContentSummary(feedBack.getFeedBackContent()));
             sysService.addFeedBack(feedBack);
             return R.ok().message("感谢您的反馈，我们会尽快处理！");
+
+        } catch (AuthenticationCredentialsNotFoundException e) {
+            return R.error().message(e.getMessage());
         } catch (Exception e) {
-            log.error("提交反馈异常：userId={}", feedBack.getUserId(), e);
+            log.error("提交反馈异常", e);
             return R.error().message("反馈提交失败，请稍后重试");
         }
     }
+
 
     /**
      * 过滤发送的消息（敏感词处理）
