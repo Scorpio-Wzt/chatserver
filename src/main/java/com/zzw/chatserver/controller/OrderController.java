@@ -45,6 +45,83 @@ public class OrderController {
     private UserService userService;
 
     /**
+     * 同意退款接口（仅客服可操作，处理自己负责的用户订单）
+     */
+    @PostMapping("/approveRefund")
+    @ApiOperation(value = "同意退款", notes = "仅客服可操作，且只能处理自己负责的用户订单的退款申请")
+    public R approveRefund(
+            @ApiParam(value = "订单所属用户ID", required = true)
+            @RequestParam @NotBlank(message = "用户ID不能为空") String userId,
+
+            @ApiParam(value = "绑定的客服ID", required = true)
+            @RequestParam @NotBlank(message = "客服ID不能为空") String customerId,
+
+            @ApiParam(value = "订单编号", required = true)
+            @RequestParam @NotBlank(message = "订单编号不能为空") String orderNo
+    ) {
+        try {
+            String currentUserId = getCurrentUserId();
+
+            // 权限校验：必须是客服角色且只能处理自己负责的订单
+            validateCustomerServicePermission(currentUserId, customerId);
+
+            // 校验用户和客服合法性
+            validateUserAndCustomerExists(userId, customerId);
+
+            // 执行同意退款
+            orderService.approveRefund(userId, customerId, orderNo);
+            log.info("客服[{}]同意用户[{}]的订单[{}]退款", currentUserId, userId, orderNo);
+            return R.ok().message("已同意退款，将按流程处理");
+        } catch (BusinessException e) {
+            log.warn("同意退款失败：{}", e.getMessage());
+            return R.error().message(e.getMessage());
+        } catch (Exception e) {
+            log.error("同意退款系统异常", e);
+            return R.error().message("同意退款失败，请稍后重试");
+        }
+    }
+
+    /**
+     * 拒绝退款接口（仅客服可操作，处理自己负责的用户订单）
+     */
+    @PostMapping("/rejectRefund")
+    @ApiOperation(value = "拒绝退款", notes = "仅客服可操作，且只能处理自己负责的用户订单的退款申请")
+    public R rejectRefund(
+            @ApiParam(value = "订单所属用户ID", required = true)
+            @RequestParam @NotBlank(message = "用户ID不能为空") String userId,
+
+            @ApiParam(value = "绑定的客服ID", required = true)
+            @RequestParam @NotBlank(message = "客服ID不能为空") String customerId,
+
+            @ApiParam(value = "订单编号", required = true)
+            @RequestParam @NotBlank(message = "订单编号不能为空") String orderNo,
+
+            @ApiParam(value = "拒绝原因", required = true)
+            @RequestParam @NotBlank(message = "拒绝原因不能为空") String reason
+    ) {
+        try {
+            String currentUserId = getCurrentUserId();
+
+            // 权限校验：必须是客服角色且只能处理自己负责的订单
+            validateCustomerServicePermission(currentUserId, customerId);
+
+            // 校验用户和客服合法性
+            validateUserAndCustomerExists(userId, customerId);
+
+            // 执行拒绝退款
+            orderService.rejectRefund(userId, customerId, orderNo, reason);
+            log.info("客服[{}]拒绝用户[{}]的订单[{}]退款，原因：{}", currentUserId, userId, orderNo, reason);
+            return R.ok().message("已拒绝退款");
+        } catch (BusinessException e) {
+            log.warn("拒绝退款失败：{}", e.getMessage());
+            return R.error().message(e.getMessage());
+        } catch (Exception e) {
+            log.error("拒绝退款系统异常", e);
+            return R.error().message("拒绝退款失败，请稍后重试");
+        }
+    }
+
+    /**
      * 确认收货接口（仅用户本人可操作）
      */
     @PostMapping("/confirmReceipt")
@@ -194,6 +271,19 @@ public class OrderController {
     }
 
     // ------------------------------ 私有工具方法（权限/校验通用逻辑） ------------------------------
+
+    // 验证当前登录用户是否为指定客服
+    private void validateCustomerServicePermission(String currentUserId, String customerId) {
+        // 必须是客服角色
+        if (!isCustomerService(currentUserId)) {
+            throw new BusinessException("无权操作：仅客服可处理退款申请");
+        }
+
+        // 必须是负责该用户的客服
+        if (!currentUserId.equals(customerId)) {
+            throw new BusinessException("无权操作：只能处理自己负责的用户订单");
+        }
+    }
 
     private void validateOrderBelongsToUser(String userId, String customerId, String orderNo) {
         // 校验用户和客服存在性（复用已有逻辑）

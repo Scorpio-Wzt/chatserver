@@ -12,12 +12,15 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer;
+import org.springframework.data.redis.serializer.StringRedisSerializer;
 import org.springframework.security.access.expression.method.DefaultMethodSecurityExpressionHandler;
 import org.springframework.security.access.expression.method.MethodSecurityExpressionHandler;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
-import org.springframework.security.config.annotation.method.configuration.EnableGlobalMethodSecurity; // 旧版注解
+import org.springframework.security.config.annotation.method.configuration.EnableGlobalMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configuration.WebSecurityCustomizer;
@@ -33,15 +36,41 @@ import javax.annotation.Resource;
 
 @Configuration
 @EnableWebSecurity
-@EnableGlobalMethodSecurity(prePostEnabled = true) // 核心：开启@PreAuthorize注解
+@EnableGlobalMethodSecurity(prePostEnabled = true)
 public class SecurityConfig{
 
     @Autowired
     @Qualifier("userDetailsServiceImpl")
     private UserDetailsService userDetailsService;
 
-    @Resource
-    private RedisTemplate<String, String> redisTemplate;
+    @Bean("kaptchaRedisTemplate") // 改为自定义名称
+    public RedisTemplate<String, String> kaptchaRedisTemplate(RedisConnectionFactory factory) {
+        RedisTemplate<String, String> template = new RedisTemplate<>();
+        template.setConnectionFactory(factory);
+        StringRedisSerializer stringSerializer = new StringRedisSerializer();
+        template.setKeySerializer(stringSerializer);
+        template.setValueSerializer(stringSerializer);
+        template.setHashKeySerializer(stringSerializer);
+        template.setHashValueSerializer(stringSerializer);
+        template.afterPropertiesSet();
+        return template;
+    }
+
+    // 用于JwtLoginAuthFilter的<String, Object>类型RedisTemplate
+    @Bean("objectRedisTemplate")
+    public RedisTemplate<String, Object> objectRedisTemplate(RedisConnectionFactory factory) {
+        RedisTemplate<String, Object> template = new RedisTemplate<>();
+        template.setConnectionFactory(factory);
+        StringRedisSerializer stringSerializer = new StringRedisSerializer();
+        GenericJackson2JsonRedisSerializer jsonSerializer = new GenericJackson2JsonRedisSerializer();
+
+        template.setKeySerializer(stringSerializer);
+        template.setValueSerializer(jsonSerializer);
+        template.setHashKeySerializer(stringSerializer);
+        template.setHashValueSerializer(jsonSerializer);
+        template.afterPropertiesSet();
+        return template;
+    }
 
     @Resource
     private MongoTemplate mongoTemplate;
@@ -85,7 +114,9 @@ public class SecurityConfig{
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http,
-                                                   AuthenticationConfiguration authConfig) throws Exception {
+                                                   AuthenticationConfiguration authConfig,
+                                                   @Qualifier("kaptchaRedisTemplate") RedisTemplate<String, String> kaptchaRedisTemplate, // 对应新名称
+                                                   @Qualifier("objectRedisTemplate") RedisTemplate<String, Object> objectRedisTemplate) throws Exception {
         http
                 .cors().and()
                 .csrf().disable()
@@ -101,7 +132,7 @@ public class SecurityConfig{
                 .permitAll()
                 .and()
                 .addFilterBefore(
-                        new KaptchaFilter(redisTemplate),
+                        new KaptchaFilter(kaptchaRedisTemplate), // 使用新名称的Bean
                         UsernamePasswordAuthenticationFilter.class
                 )
                 .addFilterBefore(
@@ -113,7 +144,8 @@ public class SecurityConfig{
                                 authenticationManager(authConfig),
                                 mongoTemplate,
                                 onlineUserService,
-                                jwtUtils
+                                jwtUtils,
+                                objectRedisTemplate
                         ),
                         UsernamePasswordAuthenticationFilter.class
                 )
@@ -122,13 +154,9 @@ public class SecurityConfig{
         return http.build();
     }
 
-    // 关键：配置角色前缀（解决@PreAuthorize("hasRole('CUSTOMER_SERVICE')")匹配问题）
     @Bean
     public MethodSecurityExpressionHandler methodSecurityExpressionHandler() {
         DefaultMethodSecurityExpressionHandler handler = new DefaultMethodSecurityExpressionHandler();
-
-        // 若角色存储为"CUSTOMER_SERVICE"（无前缀）→ 设置为空
-        // 若角色存储为"ROLE_CUSTOMER_SERVICE"（有前缀）→ 保持默认"ROLE_"
         handler.setDefaultRolePrefix("");
         return handler;
     }

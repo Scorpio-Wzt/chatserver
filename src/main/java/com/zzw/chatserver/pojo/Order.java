@@ -37,6 +37,10 @@ public class Order {
 
     private Integer status;          // 订单状态：0-待支付 1-已支付 2-退款中 3-已退款 4-已签收
 
+    private String refundReason;      // 退款原因
+
+    private String rejectReason;      // 拒绝退款原因
+
     private String createTime = Instant.now()
             // 转换为本地时区（如北京时间：UTC+8）
             .atZone(ZoneId.of("Asia/Shanghai"))

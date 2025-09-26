@@ -2,13 +2,15 @@ package com.zzw.chatserver.service.impl;
 
 import com.zzw.chatserver.pojo.vo.SimpleUser;
 import com.zzw.chatserver.service.OnlineUserService;
-import com.zzw.chatserver.utils.RedisKeyUtil;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
+import java.util.Collections;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 /**
  * 在线用户服务实现类
@@ -30,6 +32,26 @@ public class OnlineUserServiceImpl implements OnlineUserService {
     private static final String PREFIX_ALL_CLIENTS = "chat:all:clients:";
     // 过期时间定义（1小时，可根据业务调整）
     private static final long EXPIRE_HOURS = 1;
+
+    /**
+     * 获取所有在线用户的UID集合（修正为返回Set<String>，匹配广播方法需求）
+     */
+    @Override
+    public Set<String> getOnlineUidSet() {
+        // 从Redis获取Object类型的UID集合
+        Set<Object> uidObjects = redisTemplate.opsForSet().members(PREFIX_ONLINE_UID_SET);
+
+        // 转换为String类型集合（过滤null值，避免空指针）
+        if (uidObjects == null || uidObjects.isEmpty()) {
+            return Collections.emptySet();
+        }
+
+        return uidObjects.stream()
+                .filter(Objects::nonNull)  // 过滤null元素
+                .map(Object::toString)     // 转换为字符串类型
+                .collect(Collectors.toSet()); // 收集为Set<String>
+    }
+
     /**
      * 绑定客户端ID与用户信息（双向绑定）
      */
@@ -132,13 +154,6 @@ public class OnlineUserServiceImpl implements OnlineUserService {
         // 从客户端集合中移除
         redisTemplate.opsForSet().remove(PREFIX_ALL_CLIENTS, clientId);
     }
-    /**
-     * 获取所有在线用户的UID集合
-     */
-    @Override
-    public Set<Object> getOnlineUidSet() {
-        return redisTemplate.opsForSet().members(PREFIX_ONLINE_UID_SET);
-    }
 
     /**
      * 根据客户端ID查询绑定的用户信息
@@ -165,11 +180,11 @@ public class OnlineUserServiceImpl implements OnlineUserService {
      */
     @Override
     public void removeClientAndUidInSet(String clientId, String uid) {
-        // 1. 删除客户端与用户的绑定关系
+        // 删除客户端与用户的绑定关系
         String clientKey = PREFIX_CLIENT_TO_USER + clientId;
         redisTemplate.delete(clientKey);
 
-        // 2. 从在线用户Set集合中移除该UID
+        // 从在线用户Set集合中移除该UID
         String userKey = PREFIX_USER_TO_CLIENT + uid;
         redisTemplate.delete(userKey);
 

@@ -95,7 +95,7 @@ public class SuperUserServiceImpl implements SuperUserService {
         Integer code = null;
         String msg = null;
 
-        // 1. 校验账号是否存在
+        // 校验账号是否存在
         SuperUser existUser = existSuperUser(superUser.getAccount());
         if (existUser == null) {
             // 账号不存在

@@ -1,6 +1,7 @@
 package com.zzw.chatserver.utils;
 
 import io.jsonwebtoken.*;
+import lombok.extern.slf4j.Slf4j;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -16,8 +17,8 @@ import java.util.UUID;
  */
 // 若使用Spring，建议加@Component，从配置文件读取密钥（非Spring环境可删除@Component和@Value）
 @Component
+@Slf4j
 public class JwtUtils {
-    private static final Logger logger = LoggerFactory.getLogger(JwtUtils.class);
 
     // 认证头Key（与前端一致）
     public static final String TOKEN_HEADER = "Authorization";
@@ -61,7 +62,7 @@ public class JwtUtils {
     public Claims parseJwt(String token) {
         // Token非空校验
         if (!StringUtils.hasText(token)) {
-            logger.error("JWT解析失败：Token为空");
+            log.error("JWT解析失败：Token为空");
             return null;
         }
 
@@ -73,15 +74,15 @@ public class JwtUtils {
                     .getBody(); // 获取Claims（用户信息）
 
         } catch (ExpiredJwtException e) {
-            logger.error("JWT解析失败：Token已过期，token={}", token, e);
+            log.error("JWT解析失败：Token已过期，token={}", token, e);
         } catch (MalformedJwtException e) {
-            logger.error("JWT解析失败：Token格式非法（如乱码、缺失部分），token={}", token, e);
+            log.error("JWT解析失败：Token格式非法（如乱码、缺失部分），token={}", token, e);
         } catch (SignatureException e) {
-            logger.error("JWT解析失败：Token签名被篡改，token={}", token, e);
+            log.error("JWT解析失败：Token签名被篡改，token={}", token, e);
         } catch (IllegalArgumentException e) {
-            logger.error("JWT解析失败：Token参数非法（如Claims为空），token={}", token, e);
+            log.error("JWT解析失败：Token参数非法（如Claims为空），token={}", token, e);
         } catch (Exception e) {
-            logger.error("JWT解析失败：未知错误，token={}", token, e);
+            log.error("JWT解析失败：未知错误，token={}", token, e);
         }
 
         // 解析失败时返回null（上层调用需判断null，返回“非法Token”等提示）

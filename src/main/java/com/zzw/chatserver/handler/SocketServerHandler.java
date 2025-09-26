@@ -5,8 +5,7 @@ import com.zzw.chatserver.pojo.SuperUser;
 import com.zzw.chatserver.pojo.SystemUser;
 import com.zzw.chatserver.service.SuperUserService;
 import com.zzw.chatserver.service.SysService;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.stereotype.Component;
@@ -14,8 +13,9 @@ import org.springframework.stereotype.Component;
 import javax.annotation.Resource;
 
 @Component
+@Slf4j
 public class SocketServerHandler implements ApplicationRunner {
-    private Logger logger = LoggerFactory.getLogger(SocketServerHandler.class);
+
     @Resource
     private SocketIOServer socketIOServer;
 
@@ -28,12 +28,12 @@ public class SocketServerHandler implements ApplicationRunner {
     @Override
     public void run(ApplicationArguments args) throws Exception {
         //初始化一个系统用户
-        logger.info("-----------initSystemUser-------------");
+        log.info("-----------initSystemUser-------------");
         initSystemUser();
         //初始化一个管理员账号（默认注册）
-        logger.info("-----------initSuperUser-------------");
+        log.info("-----------initSuperUser-------------");
         initSuperUser();
-        logger.info("-----------socket server start-----------");
+        log.info("-----------socket server start-----------");
         socketIOServer.start();
     }
 

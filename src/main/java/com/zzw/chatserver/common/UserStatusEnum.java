@@ -16,4 +16,14 @@ public enum UserStatusEnum {
         this.code = code;
         this.desc = desc;
     }
+
+    // 根据code获取枚举实例
+    public static UserStatusEnum valueOfCode(Integer code) {
+        for (UserStatusEnum status : values()) {
+            if (status.getCode().equals(code)) {
+                return status;
+            }
+        }
+        throw new IllegalArgumentException("无效的用户状态码: " + code);
+    }
 }

@@ -3,6 +3,7 @@ package com.zzw.chatserver.controller;
 import com.zzw.chatserver.common.R;
 import com.zzw.chatserver.common.ResultEnum;
 import com.zzw.chatserver.common.UserRoleEnum;
+import com.zzw.chatserver.common.UserStatusEnum;
 import com.zzw.chatserver.common.exception.BusinessException;
 import com.zzw.chatserver.pojo.SuperUser;
 import com.zzw.chatserver.pojo.User;
@@ -56,7 +57,6 @@ public class UserController {
 
     @Resource
     private RedisTemplate<String, String> redisTemplate;
-
 
     /**
      * 获取验证码（用于注册/登录验证）
@@ -154,6 +154,51 @@ public class UserController {
         } catch (Exception e) {
             log.error("用户注册异常：username={}", rVo.getUsername(), e);
             return R.error().message("注册失败，请稍后重试");
+        }
+    }
+
+    @PostMapping("/changeStatus")
+    @ApiOperation(value = "修改用户账号状态", notes = "仅管理员可操作，支持设置正常、冻结、注销三种状态")
+    public R changeUserStatus(
+            @ApiParam(value = "用户状态修改请求", required = true)
+            @RequestBody @Valid ChangeUserStatusRequestVo requestVo) {
+        try {
+            // 权限校验：调用已有工具方法检查是否为管理员角色
+            checkUserHasAnyRole(new String[]{"SUPER_ADMIN", "ADMIN"});
+
+            // 校验状态值是否合法
+            if (!Arrays.asList(
+                    UserStatusEnum.NORMAL.getCode(),
+                    UserStatusEnum.FREEZED.getCode(),
+                    UserStatusEnum.CANCELED.getCode()
+            ).contains(requestVo.getStatus())) {
+                return R.error().message("无效的状态值，允许的值：0(正常),1(冻结),2(注销)");
+            }
+
+            // 执行状态修改
+            userService.changeUserStatus(requestVo.getUserId(), requestVo.getStatus());
+
+            // 记录操作日志
+            String operatorId = getCurrentOperatorId();
+            log.info("管理员[{}]修改用户[{}]状态为[{}({})]",
+                    operatorId,
+                    requestVo.getUserId(),
+                    requestVo.getStatus(),
+                    UserStatusEnum.valueOfCode(requestVo.getStatus()).getDesc());
+
+            return R.ok().message("用户状态修改成功");
+        } catch (AuthenticationCredentialsNotFoundException e) {
+            log.warn("修改用户状态失败：{}", e.getMessage());
+            return R.error().message("请先登录");
+        } catch (AccessDeniedException e) {
+            log.warn("修改用户状态失败：{}", e.getMessage());
+            return R.error().message("权限不足，仅管理员可操作");
+        } catch (BusinessException e) {
+            log.warn("修改用户状态失败：{}", e.getMessage());
+            return R.error().message(e.getMessage());
+        } catch (Exception e) {
+            log.error("修改用户状态异常：{}", requestVo, e);
+            return R.error().message("修改用户状态失败");
         }
     }
 
@@ -454,34 +499,34 @@ public class UserController {
 
     // 角色校验工具方法
     private void checkUserHasAnyRole(String[] requiredRoles) {
-        // 1. 获取当前用户认证信息
+        // 获取当前用户认证信息
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
 
-        // 2. 验证用户是否已登录
+        // 验证用户是否已登录
         if (authentication == null || !authentication.isAuthenticated()) {
             log.warn("用户未登录或认证失效");
             throw new AuthenticationCredentialsNotFoundException("请先登录");
         }
 
-        // 3. 验证是否为匿名用户
+        // 验证是否为匿名用户
         if (authentication.getPrincipal() instanceof String
                 && "anonymousUser".equals(authentication.getPrincipal())) {
             log.warn("匿名用户尝试访问需要权限的接口");
             throw new AccessDeniedException("权限不足，请使用管理员账号登录");
         }
 
-        // 4. 提取用户拥有的角色列表
+        // 提取用户拥有的角色列表
         List<String> userRoles = authentication.getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority)
                 .collect(Collectors.toList());
         log.debug("当前用户拥有的角色: {}", userRoles);
 
-        // 5. 处理需要的角色（添加ROLE_前缀，根据实际情况调整）
+        // 处理需要的角色（添加ROLE_前缀，根据实际情况调整）
         List<String> requiredRolesWithPrefix = Arrays.stream(requiredRoles)
                 .map(role -> "ROLE_" + role) // 若角色存储时不带ROLE_前缀则删除此行
                 .collect(Collectors.toList());
 
-        // 6. 校验角色是否匹配
+        // 校验角色是否匹配
         boolean hasRequiredRole = userRoles.stream()
                 .anyMatch(requiredRolesWithPrefix::contains);
 

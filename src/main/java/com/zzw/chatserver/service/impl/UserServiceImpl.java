@@ -3,6 +3,7 @@ package com.zzw.chatserver.service.impl;
 import com.zzw.chatserver.common.ConstValueEnum;
 import com.zzw.chatserver.common.ResultEnum;
 import com.zzw.chatserver.common.UserRoleEnum;
+import com.zzw.chatserver.common.UserStatusEnum;
 import com.zzw.chatserver.common.exception.BusinessException;
 import com.zzw.chatserver.dao.AccountPoolDao;
 import com.zzw.chatserver.dao.UserDao;
@@ -17,6 +18,7 @@ import com.zzw.chatserver.service.UserService;
 import com.zzw.chatserver.utils.ChatServerUtil;
 import com.zzw.chatserver.utils.DateUtil;
 import com.zzw.chatserver.utils.SensitiveInfoDesensitizerUtil;
+import lombok.extern.slf4j.Slf4j;
 import org.bson.types.ObjectId;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,10 +43,8 @@ import java.util.regex.Pattern;
  * 实现UserService接口定义的所有用户管理逻辑，依赖DAO层、加密工具、工具类完成业务落地
  */
 @Service
+@Slf4j
 public class UserServiceImpl implements UserService {
-
-    // 定义Logger实例
-    private static final Logger logger = LoggerFactory.getLogger(UserServiceImpl.class);
 
     @Resource
     private UserDao userDao;
@@ -70,18 +70,18 @@ public class UserServiceImpl implements UserService {
      */
     @Override
     public String getCurrentUserId() {
-        // 1. 从Spring Security上下文获取认证信息
+        // 从Spring Security上下文获取认证信息
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
 
-        // 2. 校验认证状态（未认证或匿名用户直接返回null）
+        // 校验认证状态（未认证或匿名用户直接返回null）
         if (authentication == null
                 || !authentication.isAuthenticated()
                 || authentication.getPrincipal() == "anonymousUser") {
-            logger.warn("当前用户未认证或为匿名用户，无法获取用户ID");
+            log.warn("当前用户未认证或为匿名用户，无法获取用户ID");
             return null;
         }
 
-        // 3. 从认证信息中提取用户名
+        // 从认证信息中提取用户名
         String username = null;
         if (authentication.getPrincipal() instanceof UserDetails) {
             // 标准认证流程：从UserDetails中获取用户名
@@ -93,24 +93,24 @@ public class UserServiceImpl implements UserService {
         }
 
         if (username == null || username.isEmpty()) {
-            logger.warn("无法从认证信息中提取用户名");
+            log.warn("无法从认证信息中提取用户名");
             return null;
         }
 
-        // 4. 先尝试查询普通用户
+        // 先尝试查询普通用户
         User user = userDao.findUserByUsername(username);
         if (user != null && user.getUid() != null) {
             return user.getUid(); // 返回普通用户的uid
         }
 
-        // 5. 普通用户不存在时，尝试查询超级管理员
+        // 普通用户不存在时，尝试查询超级管理员
         SuperUser superUser = superUserService.existSuperUser(username);
         if (superUser != null && superUser.getSid() != null) {
             return superUser.getSid().toString(); // 返回超级管理员sid的字符串形式
         }
 
-        // 6. 所有查询失败的情况
-        logger.warn("未找到用户名[{}]对应的用户或超级管理员信息", username);
+        // 所有查询失败的情况
+        log.warn("未找到用户名[{}]对应的用户或超级管理员信息", username);
         return null;
     }
 
@@ -184,7 +184,7 @@ public class UserServiceImpl implements UserService {
 
         // 校验uid是否正确赋值
         if (savedUser.getUid() == null || !savedUser.getUid().equals(savedUser.getUserId().toString())) {
-            logger.warn("客服用户[{}]的uid未正确同步，手动修正", savedUser.getUsername());
+            log.warn("客服用户[{}]的uid未正确同步，手动修正", savedUser.getUsername());
             savedUser.setUid(savedUser.getUserId().toString());
             userDao.save(savedUser);
         }
@@ -216,7 +216,7 @@ public class UserServiceImpl implements UserService {
             return superUser != null && superUser.getRole() == 0;
         } catch (IllegalArgumentException e) {
             // operatorId格式错误（非ObjectId字符串），直接返回false
-            logger.warn("操作者ID[{}]格式错误，非有效的ObjectId", operatorId);
+            log.warn("操作者ID[{}]格式错误，非有效的ObjectId", operatorId);
             return false;
         }
     }
@@ -234,7 +234,7 @@ public class UserServiceImpl implements UserService {
         String userIdStr = null;
         String uid = null;
 
-        // 1. 校验两次密码是否一致
+        // 校验两次密码是否一致
         if (!rVo.getRePassword().equals(rVo.getPassword())) {
             code = ResultEnum.INCORRECT_PASSWORD_TWICE.getCode();
             msg = ResultEnum.INCORRECT_PASSWORD_TWICE.getMessage();
@@ -243,7 +243,7 @@ public class UserServiceImpl implements UserService {
             return map;
         }
 
-        // 2. 校验用户名是否已存在
+        // 校验用户名是否已存在
         User existUser = userDao.findUserByUsername(rVo.getUsername());
         if (existUser != null) {
             code = ResultEnum.USER_HAS_EXIST.getCode();
@@ -253,13 +253,13 @@ public class UserServiceImpl implements UserService {
             return map;
         }
 
-        // 3. 生成用户唯一编码
+        // 生成用户唯一编码
         AccountPool accountPool = new AccountPool();
         accountPool.setType(ConstValueEnum.USERTYPE);
         accountPool.setStatus(ConstValueEnum.ACCOUNT_USED);
         accountPoolDao.save(accountPool);
 
-        // 4. 创建用户实体
+        // 创建用户实体
         String encryptedPwd = bCryptPasswordEncoder.encode(rVo.getPassword());
         User user = new User();
         user.setUserId(new ObjectId()); // 生成userId
@@ -278,7 +278,7 @@ public class UserServiceImpl implements UserService {
 
         // 校验uid赋值
         if (savedUser.getUid() == null || !savedUser.getUid().equals(savedUser.getUserId().toString())) {
-            logger.warn("普通用户[{}]的uid未正确同步，手动修正", savedUser.getUsername());
+            log.warn("普通用户[{}]的uid未正确同步，手动修正", savedUser.getUsername());
             savedUser.setUid(savedUser.getUserId().toString());
             userDao.save(savedUser);
         }
@@ -307,7 +307,7 @@ public class UserServiceImpl implements UserService {
     private void handleAutoFriendRelation(User newUser) {
         // 强化校验：确保newUser的userId和uid有效
         if (newUser == null || newUser.getUserId() == null || newUser.getUid() == null) {
-            logger.error("新用户对象或关键字段（userId/uid）为空，无法处理自动好友关系");
+            log.error("新用户对象或关键字段（userId/uid）为空，无法处理自动好友关系");
             return;
         }
 
@@ -317,7 +317,7 @@ public class UserServiceImpl implements UserService {
             List<GoodFriend> friendRelations = new ArrayList<>();
             for (User existUser : allUsers) {
                 if (existUser == null || existUser.getUserId() == null || existUser.getUid() == null) {
-                    logger.warn("发现无效用户数据（userId或uid为空），跳过处理");
+                    log.warn("发现无效用户数据（userId或uid为空），跳过处理");
                     continue;
                 }
 
@@ -352,7 +352,7 @@ public class UserServiceImpl implements UserService {
             List<GoodFriend> friendRelations = new ArrayList<>();
             for (User cs : customerServices) {
                 if (cs == null || cs.getUserId() == null || cs.getUid() == null) {
-                    logger.warn("发现无效客服数据（userId或uid为空），跳过处理");
+                    log.warn("发现无效客服数据（userId或uid为空），跳过处理");
                     continue;
                 }
 
@@ -406,12 +406,12 @@ public class UserServiceImpl implements UserService {
 
         User user = userDao.findById(new ObjectId(userId)).orElse(null);
         if (user != null) {
-            // 1. 获取当前登录用户ID
+            // 获取当前登录用户ID
             String currentUserId = getCurrentUserId();
-            // 2. 判断当前用户是否为超级管理员
+            // 判断当前用户是否为超级管理员
             boolean isSuperAdmin = currentUserId != null && isSuperAdmin(currentUserId);
 
-            // 3. 非超级管理员：对所有敏感字段（手机号、身份证号、邮箱）进行脱敏
+            // 非超级管理员：对所有敏感字段（手机号、身份证号、邮箱）进行脱敏
             if (!isSuperAdmin) {
                 // 手机号脱敏（调用通用方法，字段名匹配"phone"）
                 user.setPhone(SensitiveInfoDesensitizerUtil.desensitize("phone", user.getPhone()));
@@ -558,9 +558,9 @@ public class UserServiceImpl implements UserService {
 
         List<User> userList = mongoTemplate.find(query, User.class);
 
-        // 1. 获取当前登录用户ID
+        // 获取当前登录用户ID
         String currentUserId = getCurrentUserId();
-        // 2. 直接使用isSuperAdmin方法判断
+        // 直接使用isSuperAdmin方法判断
         boolean isSuperAdmin = currentUserId != null && isSuperAdmin(currentUserId);
 
         // 非超级管理员：用通用脱敏方法处理手机号、身份证号、邮箱
@@ -591,14 +591,14 @@ public class UserServiceImpl implements UserService {
         boolean hasError = false;
 
         try {
-            // 1. 校验用户ID格式
+            // 校验用户ID格式
             if (requestVo.getUserId() == null || !ObjectId.isValid(requestVo.getUserId())) {
                 code = ResultEnum.INVALID_USER_ID.getCode();
                 msg = "用户ID格式错误，需为有效的ObjectId字符串（24位十六进制）";
                 hasError = true;
             }
 
-            // 2. 权限校验：基础权限（本人或超级管理员）
+            // 权限校验：基础权限（本人或超级管理员）
             String currentUserId = getCurrentUserId();
             if (!hasError) {
                 if (currentUserId == null ||
@@ -610,7 +610,7 @@ public class UserServiceImpl implements UserService {
                 }
             }
 
-            // 3. 校验可更新的字段（包含phone和IDcard，增加敏感字段标识）
+            // 校验可更新的字段（包含phone和IDcard，增加敏感字段标识）
             List<String> allowUpdateFields = Arrays.asList("sex", "age", "email", "nickname", "photo", "sign", "phone", "IDcard");
             List<String> sensitiveFields = Arrays.asList("phone", "IDcard"); // 敏感字段单独标记
             if (!hasError && !allowUpdateFields.contains(requestVo.getField())) {
@@ -619,7 +619,7 @@ public class UserServiceImpl implements UserService {
                 hasError = true;
             }
 
-            // 4. 敏感字段额外权限校验（可选：仅超级管理员可修改他人敏感信息）
+            // 敏感字段额外权限校验（可选：仅超级管理员可修改他人敏感信息）
             if (!hasError && sensitiveFields.contains(requestVo.getField())) {
                 // 非本人且非超级管理员，禁止修改敏感字段
                 if (!currentUserId.equals(requestVo.getUserId()) && !isSuperAdmin(currentUserId)) {
@@ -629,7 +629,7 @@ public class UserServiceImpl implements UserService {
                 }
             }
 
-            // 5. 字段具体校验（新增phone和IDcard的校验逻辑）
+            // 字段具体校验（新增phone和IDcard的校验逻辑）
             if (!hasError) {
                 switch (requestVo.getField()) {
                     // ... 保留原有字段的校验逻辑 ...
@@ -716,7 +716,7 @@ public class UserServiceImpl implements UserService {
                 }
             }
 
-            // 6. 执行更新操作
+            // 执行更新操作
             if (!hasError) {
                 Query query = Query.query(Criteria.where("_id").is(new ObjectId(requestVo.getUserId())));
                 mongoTemplate.upsert(query, update, User.class);
@@ -725,7 +725,7 @@ public class UserServiceImpl implements UserService {
                 String logValue = sensitiveFields.contains(requestVo.getField())
                         ? SensitiveInfoDesensitizerUtil.desensitize(requestVo.getField(), requestVo.getValue().toString())
                         : requestVo.getValue().toString();
-                logger.info("用户信息更新成功，用户ID：{}，更新字段：{}，值：{}",
+                log.info("用户信息更新成功，用户ID：{}，更新字段：{}，值：{}",
                         requestVo.getUserId(),
                         requestVo.getField(),
                         logValue);
@@ -734,7 +734,7 @@ public class UserServiceImpl implements UserService {
                 msg = "用户信息更新成功";
             }
         } catch (Exception e) {
-            logger.error("更新用户信息失败，用户ID：{}，错误信息：{}",
+            log.error("更新用户信息失败，用户ID：{}，错误信息：{}",
                     requestVo.getUserId(),
                     e.getMessage(),
                     e);
@@ -803,9 +803,9 @@ public class UserServiceImpl implements UserService {
     public List<User> getUserList() {
         List<User> userList = userDao.findAll();
 
-        // 1. 获取当前登录用户ID
+        // 获取当前登录用户ID
         String currentUserId = getCurrentUserId();
-        // 2. 直接使用isSuperAdmin方法判断
+        // 直接使用isSuperAdmin方法判断
         boolean isSuperAdmin = currentUserId != null && isSuperAdmin(currentUserId);
 
         // 非超级管理员：用通用脱敏方法处理手机号、身份证号、邮箱
@@ -831,9 +831,9 @@ public class UserServiceImpl implements UserService {
         Query query = Query.query(criteria);
         List<User> userList = mongoTemplate.find(query, User.class);
 
-        // 1. 获取当前登录用户ID
+        // 获取当前登录用户ID
         String currentUserId = getCurrentUserId();
-        // 2. 直接使用isSuperAdmin方法判断
+        // 直接使用isSuperAdmin方法判断
         boolean isSuperAdmin = currentUserId != null && isSuperAdmin(currentUserId);
 
         // 非超级管理员：用通用脱敏方法处理手机号、身份证号、邮箱
@@ -850,8 +850,46 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public void changeUserStatus(String uid, Integer status) {
+        // 验证用户ID有效性
+        if (uid == null || !ObjectId.isValid(uid)) {
+            throw new BusinessException("用户ID格式错误");
+        }
+
+        // 验证状态值有效性
+        try {
+            UserStatusEnum.valueOfCode(status);
+        } catch (IllegalArgumentException e) {
+            throw new BusinessException(e.getMessage());
+        }
+
+        // 验证操作权限（仅超级管理员和管理员可操作）
+        String currentUserId = getCurrentUserId();
+        if (currentUserId == null || !isSuperAdminOrAdmin(currentUserId)) {
+            throw new BusinessException("无权限修改用户状态，仅管理员可操作");
+        }
+
+        // 验证目标用户是否存在
+        User user = getUserInfo(uid);
+        if (user == null) {
+            throw new BusinessException("目标用户不存在");
+        }
+
         Update update = new Update().set("status", status);
         Query query = Query.query(Criteria.where("_id").is(new ObjectId(uid)));
         mongoTemplate.findAndModify(query, update, User.class);
     }
+
+    // 判断是否为超级管理员或普通管理员
+    private boolean isSuperAdminOrAdmin(String operatorId) {
+        try {
+            ObjectId sid = new ObjectId(operatorId);
+            SuperUser superUser = superUserService.findBySid(sid);
+            // 假设0是超级管理员，1是普通管理员
+            return superUser != null && (superUser.getRole() == 0 || superUser.getRole() == 1);
+        } catch (IllegalArgumentException e) {
+            log.warn("操作者ID[{}]格式错误，非有效的ObjectId", operatorId);
+            return false;
+        }
+    }
+
 }

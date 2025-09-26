@@ -39,6 +39,64 @@ public class OrderServiceImpl implements OrderService {
     private static final int ORDER_STATUS_CONFIRMED = 4; // 已确认收货
 
     /**
+     * 同意退款：仅客服可操作，将状态从“退款中”改为“已退款”
+     */
+    @Override
+    public void approveRefund(String userId, String customerId, String orderNo) {
+        // 查询订单
+        Order order = orderDao.findByOrderNo(orderNo);
+        if (order == null) {
+            throw new BusinessException("订单不存在：" + orderNo);
+        }
+
+        // 验证订单归属
+        if (!order.getUserId().equals(userId) || !order.getCustomerId().equals(customerId)) {
+            throw new BusinessException("无权操作此订单：订单归属与当前用户/客服不匹配");
+        }
+
+        // 验证订单状态（仅“退款中”的订单可同意退款）
+        if (!Objects.equals(order.getStatus(), ORDER_STATUS_REFUNDING)) {
+            throw new BusinessException("订单状态异常：仅退款中的订单可同意退款，当前状态=" + getOrderStatusDesc(order.getStatus()));
+        }
+
+        // 更新订单状态与退款完成时间
+        order.setStatus(ORDER_STATUS_REFUNDED);
+        order.setRefundTime(String.valueOf(Instant.now()));
+        orderDao.save(order);
+    }
+
+    /**
+     * 拒绝退款：仅客服可操作，将状态从“退款中”改回“已支付”
+     */
+    @Override
+    public void rejectRefund(String userId, String customerId, String orderNo, String reason) {
+        // 查询订单
+        Order order = orderDao.findByOrderNo(orderNo);
+        if (order == null) {
+            throw new BusinessException("订单不存在：" + orderNo);
+        }
+
+        // 验证订单归属
+        if (!order.getUserId().equals(userId) || !order.getCustomerId().equals(customerId)) {
+            throw new BusinessException("无权操作此订单：订单归属与当前用户/客服不匹配");
+        }
+
+        // 验证订单状态（仅“退款中”的订单可拒绝退款）
+        if (!Objects.equals(order.getStatus(), ORDER_STATUS_REFUNDING)) {
+            throw new BusinessException("订单状态异常：仅退款中的订单可拒绝退款，当前状态=" + getOrderStatusDesc(order.getStatus()));
+        }
+
+        // 验证拒绝原因
+        if (reason == null || reason.trim().isEmpty()) {
+            throw new BusinessException("拒绝退款原因不能为空");
+        }
+
+        // 更新订单状态
+        order.setStatus(ORDER_STATUS_PAID);
+        // 可以考虑添加一个字段存储拒绝原因，这里简化处理
+        orderDao.save(order);
+    }
+    /**
      * 根据订单号查询订单（Service层实现）
      * @param orderNo 订单编号
      * @return 订单对象

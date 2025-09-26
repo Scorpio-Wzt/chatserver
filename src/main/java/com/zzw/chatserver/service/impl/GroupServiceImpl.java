@@ -111,7 +111,7 @@ public class GroupServiceImpl implements GroupService {
     @Override
     @Transactional(rollbackFor = Throwable.class) // 添加事务注解，确保操作原子性
     public String createGroup(CreateGroupRequestVo requestVo) {
-        // 1. 参数校验（核心字段非空+格式合法）
+        // 参数校验（核心字段非空+格式合法）
         if (requestVo == null
                 || StringUtils.isEmpty(requestVo.getHolderUserId())
                 || StringUtils.isEmpty(requestVo.getHolderName())) {
@@ -121,7 +121,7 @@ public class GroupServiceImpl implements GroupService {
             throw new BusinessException(ResultEnum.INVALID_USER_ID, "群主ID格式错误");
         }
 
-        // 2. 创建群账号（AccountPool），标记为已使用
+        // 创建群账号（AccountPool），标记为已使用
         AccountPool accountPool = new AccountPool();
         accountPool.setType(2); // 2=群聊账号
         accountPool.setStatus(1); // 1=已使用
@@ -131,7 +131,7 @@ public class GroupServiceImpl implements GroupService {
             throw new BusinessException(ResultEnum.SYSTEM_ERROR, "群聊账号生成失败");
         }
 
-        // 3. 保存群基本信息
+        // 保存群基本信息
         Group group = new Group();
         group.setTitle(requestVo.getTitle()); // 允许null（如果业务允许群名称为空）
         group.setDesc(requestVo.getDesc());
@@ -147,7 +147,7 @@ public class GroupServiceImpl implements GroupService {
             throw new BusinessException(ResultEnum.SYSTEM_ERROR, "群聊信息保存失败");
         }
 
-        // 4. 保存群主的群成员关系（标记为群主）
+        // 保存群主的群成员关系（标记为群主）
         GroupUser groupUser = new GroupUser();
         groupUser.setGroupId(savedGroup.getGroupId()); // 使用保存后的groupId
         groupUser.setUserId(savedGroup.getHolderUserId());
@@ -155,7 +155,7 @@ public class GroupServiceImpl implements GroupService {
         groupUser.setHolder(1); // 1=群主
         groupUserDao.save(groupUser);
 
-        // 5. 若必须冗余gid字段，使用updateFirst更新（而非upsert）
+        // 若必须冗余gid字段，使用updateFirst更新（而非upsert）
         if (savedGroup.getGid() == null) {
             Update update = new Update().set("gid", savedGroup.getGroupId().toString());
             Query query = Query.query(Criteria.where("_id").is(savedGroup.getGroupId()));

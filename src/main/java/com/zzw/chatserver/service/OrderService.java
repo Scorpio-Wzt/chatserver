@@ -12,6 +12,25 @@ import java.util.List;
 public interface OrderService {
 
     /**
+     * 同意退款（仅客服操作）
+     * @param userId 订单所属用户ID
+     * @param customerId 绑定的客服ID
+     * @param orderNo 订单编号
+     * @throws BusinessException 当订单状态异常或无权操作时抛出
+     */
+    void approveRefund(String userId, String customerId, String orderNo);
+
+    /**
+     * 拒绝退款（仅客服操作）
+     * @param userId 订单所属用户ID
+     * @param customerId 绑定的客服ID
+     * @param orderNo 订单编号
+     * @param reason 拒绝原因
+     * @throws BusinessException 当订单状态异常或无权操作时抛出
+     */
+    void rejectRefund(String userId, String customerId, String orderNo, String reason);
+
+    /**
      * 通过订单号查询订单
      * @param orderNo
      * @return
