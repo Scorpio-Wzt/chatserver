@@ -627,10 +627,9 @@ public class UserServiceImpl implements UserService {
                 }
             }
 
-            // 字段具体校验（新增phone和IDcard的校验逻辑）
+            // 字段具体校验
             if (!hasError) {
                 switch (requestVo.getField()) {
-                    // ... 保留原有字段的校验逻辑 ...
                     case "sex":
                         String sexStr = (String) requestVo.getValue();
                         if (!ChatServerUtil.isNumeric(sexStr)) {

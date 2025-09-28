@@ -77,7 +77,7 @@ public class GoodFriendServiceImpl implements GoodFriendService {
                         Criteria.where("senderId").is(currentUserObjId)
                                 .orOperator(Criteria.where("receiverId").is(currentUserObjId))
                 ),
-                // 步骤1：新增对方用户ID字段（otherSideId）
+                // 新增对方用户ID字段（otherSideId）
                 Aggregation.addFields()
                         .addField("otherSideId")
                         .withValue(
@@ -86,7 +86,7 @@ public class GoodFriendServiceImpl implements GoodFriendService {
                                         .otherwise("senderId")
                         )
                         .build(),
-                // 步骤2：新增临时字段（targetFriendField）存储动态关联的字段名
+                // 新增临时字段（targetFriendField）存储动态关联的字段名
                 Aggregation.addFields()
                         .addField("targetFriendField")
                         .withValue(
@@ -107,7 +107,7 @@ public class GoodFriendServiceImpl implements GoodFriendService {
                 Aggregation.limit(actualMaxCount),
                 // 关联用户表（正常关联）
                 Aggregation.lookup("users", "otherSideId", "_id", "otherUserInfo"),
-                // 步骤3：关联好友表 → 使用临时字段targetFriendField（字符串类型）
+                // 关联好友表 → 使用临时字段targetFriendField（字符串类型）
                 Aggregation.lookup(
                         "goodfriends",       // 关联的集合名
                         "otherSideId",       // 本地字段（当前结果中的对方ID）
