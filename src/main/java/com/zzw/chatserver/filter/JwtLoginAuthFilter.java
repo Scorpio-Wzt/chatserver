@@ -35,7 +35,7 @@ import java.util.concurrent.TimeUnit;
 /**
  * JWT登录认证过滤器
  * 职责：处理用户登录请求、验证凭据、生成JWT令牌、更新用户登录状态
- * 新增功能：密码错误三次自动冻结账户
+ * 新增功能：密码错误三次后15分钟内不允许登录
  */
 @Slf4j
 public class JwtLoginAuthFilter extends UsernamePasswordAuthenticationFilter {
@@ -43,8 +43,10 @@ public class JwtLoginAuthFilter extends UsernamePasswordAuthenticationFilter {
     // 常量定义（统一维护，便于修改）
     private static final String LOGIN_PROCESS_URL = "/user/login";
     private static final String PASSWORD_ERROR_COUNT_KEY = "login:error:count:"; // Redis存储错误次数的key前缀
+    private static final String ACCOUNT_LOCK_KEY = "login:lock:"; // Redis存储账户锁定的key前缀
     private static final int MAX_ERROR_COUNT = 3; // 最大错误次数
     private static final long ERROR_COUNT_EXPIRE_HOURS = 24; // 错误计数过期时间（24小时）
+    private static final long LOCK_DURATION_MINUTES = 15; // 账户锁定时长（15分钟）
 
     // 依赖组件（构造器注入，确保不可变）
     private final AuthenticationManager authenticationManager;
@@ -200,7 +202,7 @@ public class JwtLoginAuthFilter extends UsernamePasswordAuthenticationFilter {
     }
 
     /**
-     * 认证失败处理：记录错误次数，达到阈值则冻结账户
+     * 认证失败处理：记录错误次数，达到阈值则锁定账户15分钟
      */
     @Override
     protected void unsuccessfulAuthentication(HttpServletRequest request,
@@ -215,14 +217,14 @@ public class JwtLoginAuthFilter extends UsernamePasswordAuthenticationFilter {
                 // 增加错误计数
                 int errorCount = incrementPasswordErrorCount(username);
 
-                // 检查是否达到冻结阈值
+                // 检查是否达到锁定阈值
                 if (errorCount >= MAX_ERROR_COUNT) {
-                    // 冻结账户
-                    freezeUserAccount(username);
-                    log.warn("用户密码错误次数达到{}次，已冻结账户，username: {}", MAX_ERROR_COUNT, username);
+                    // 锁定账户15分钟
+                    lockUserAccount(username);
+                    log.warn("用户密码错误次数达到{}次，已锁定账户15分钟，username: {}", MAX_ERROR_COUNT, username);
                     ResponseUtil.out(response, R.error()
                             .resultEnum(ResultEnum.USER_LOGIN_FAILED)
-                            .message("密码错误次数过多，账户已冻结，请24小时后再试"));
+                            .message("密码错误次数过多，账号已锁定，请15分钟后再试"));
                     return;
                 } else {
                     // 提示剩余次数
@@ -299,6 +301,13 @@ public class JwtLoginAuthFilter extends UsernamePasswordAuthenticationFilter {
     }
 
     /**
+     * 生成账户锁定的Redis键
+     */
+    private String getAccountLockKey(String username) {
+        return ACCOUNT_LOCK_KEY + username;
+    }
+
+    /**
      * 增加密码错误计数
      */
     private int incrementPasswordErrorCount(String username) {
@@ -318,6 +327,24 @@ public class JwtLoginAuthFilter extends UsernamePasswordAuthenticationFilter {
         String key = getPasswordErrorCountKey(username);
         redisTemplate.delete(key);
         log.debug("重置密码错误计数，username: {}", username);
+    }
+
+    /**
+     * 锁定用户账户（15分钟）
+     */
+    private void lockUserAccount(String username) {
+        String key = getAccountLockKey(username);
+        redisTemplate.opsForValue().set(key, true);
+        redisTemplate.expire(key, LOCK_DURATION_MINUTES, TimeUnit.MINUTES);
+    }
+
+    /**
+     * 解锁用户账户
+     */
+    private void unlockUserAccount(String username) {
+        String key = getAccountLockKey(username);
+        redisTemplate.delete(key);
+        log.debug("解锁用户账户，username: {}", username);
     }
 
     /**
@@ -343,5 +370,23 @@ public class JwtLoginAuthFilter extends UsernamePasswordAuthenticationFilter {
                 .and("status").is(UserStatusEnum.FREEZED.getCode()));
 
         return mongoTemplate.exists(query, "users");
+    }
+
+    /**
+     * 检查锁定是否已过期
+     */
+    private boolean isLockExpired(String username) {
+        String key = getAccountLockKey(username);
+        Long ttl = redisTemplate.getExpire(key, TimeUnit.MINUTES);
+        return ttl == null || ttl <= 0;
+    }
+
+    /**
+     * 获取剩余锁定时间（分钟）
+     */
+    private long getRemainingLockTime(String username) {
+        String key = getAccountLockKey(username);
+        Long ttl = redisTemplate.getExpire(key, TimeUnit.MINUTES);
+        return ttl != null && ttl > 0 ? ttl : 0;
     }
 }
