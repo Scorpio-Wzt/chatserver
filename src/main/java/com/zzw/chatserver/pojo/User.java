@@ -1,7 +1,7 @@
 package com.zzw.chatserver.pojo;
 
 import com.zzw.chatserver.common.UserRoleEnum;
-import com.zzw.chatserver.common.UserStatusEnum; // 导入枚举
+import com.zzw.chatserver.common.UserStatusEnum;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.bson.types.ObjectId;
@@ -44,17 +44,18 @@ public class User {
     private String notifySound = "default"; //提示音
     private String color = "#000"; //字体颜色
     private String bgColor = "#fff"; //背景颜色
-    // 注册时间：默认当前时间（北京时间）
+    // 注册时间（默认初始化当前时间，格式：yyyy-MM-dd HH:mm:ss，时区：Asia/Shanghai）
     private String signUpTime = Instant.now()
+            // 转换为本地时区（如北京时间：UTC+8）
             .atZone(ZoneId.of("Asia/Shanghai"))
+            // 格式化输出为友好字符串
             .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
-    // 最后登录时间：默认当前时间（北京时间）
     private String lastLoginTime = Instant.now()
+            // 转换为本地时区（如北京时间：UTC+8）
             .atZone(ZoneId.of("Asia/Shanghai"))
+            // 格式化输出为友好字符串
             .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
-
-    // 用枚举的code作为默认值，避免硬编码
-    private Integer status = UserStatusEnum.NORMAL.getCode(); // 默认：正常可用（关联枚举）
+    private Integer status =  UserStatusEnum.NORMAL.getCode(); // 默认：正常可用（关联枚举） 0：正常，1：冻结，2：注销
     private Integer age = 18;
     private Long onlineTime = 0L; //在线时长
     private BrowserSetting loginSetting; //登录设备信息

@@ -16,7 +16,6 @@ import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.security.access.AccessDeniedException;
@@ -56,8 +55,9 @@ public class UserController {
     @Value("${server.servlet.context-path}")
     private String contextPath;
 
-    @Resource
-    private RedisTemplate<String, String> kaptchaRedisTemplate;
+    @Resource(name = "customStringRedisTemplate")
+    private RedisTemplate<String, String> customStringRedisTemplate;
+
 
     /**
      * 获取验证码（用于注册/登录验证）
@@ -77,11 +77,9 @@ public class UserController {
             String verificationCode = ChatServerUtil.generatorCode();
             String redisKey = RedisKeyUtil.getKaptchaKey(kaptchaOwner);
             // redis 有效时间为 60s
-            kaptchaRedisTemplate.opsForValue().set(redisKey, verificationCode, 60, TimeUnit.SECONDS);
+            customStringRedisTemplate.opsForValue().set(redisKey, verificationCode, 60, TimeUnit.SECONDS);
 
             log.info("生成验证码成功：owner={}, code={}", kaptchaOwner, verificationCode);
-            // 在UserController的getCode方法中添加
-            log.debug("当前RedisTemplate的value序列化器: {}", kaptchaRedisTemplate.getValueSerializer().getClass().getName());
             return R.ok().data("code", verificationCode);
         } catch (Exception e) {
             log.error("生成验证码失败", e);
@@ -204,7 +202,6 @@ public class UserController {
             return R.error().message("修改用户状态失败");
         }
     }
-
 
     /**
      * 添加新的好友分组
@@ -502,34 +499,34 @@ public class UserController {
 
     // 角色校验工具方法
     private void checkUserHasAnyRole(String[] requiredRoles) {
-        // 获取当前用户认证信息
+        // 1. 获取当前用户认证信息
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
 
-        // 验证用户是否已登录
+        // 2. 验证用户是否已登录
         if (authentication == null || !authentication.isAuthenticated()) {
             log.warn("用户未登录或认证失效");
             throw new AuthenticationCredentialsNotFoundException("请先登录");
         }
 
-        // 验证是否为匿名用户
+        // 3. 验证是否为匿名用户
         if (authentication.getPrincipal() instanceof String
                 && "anonymousUser".equals(authentication.getPrincipal())) {
             log.warn("匿名用户尝试访问需要权限的接口");
             throw new AccessDeniedException("权限不足，请使用管理员账号登录");
         }
 
-        // 提取用户拥有的角色列表
+        // 4. 提取用户拥有的角色列表
         List<String> userRoles = authentication.getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority)
                 .collect(Collectors.toList());
         log.debug("当前用户拥有的角色: {}", userRoles);
 
-        // 处理需要的角色（添加ROLE_前缀，根据实际情况调整）
+        // 5. 处理需要的角色（添加ROLE_前缀，根据实际情况调整）
         List<String> requiredRolesWithPrefix = Arrays.stream(requiredRoles)
                 .map(role -> "ROLE_" + role) // 若角色存储时不带ROLE_前缀则删除此行
                 .collect(Collectors.toList());
 
-        // 校验角色是否匹配
+        // 6. 校验角色是否匹配
         boolean hasRequiredRole = userRoles.stream()
                 .anyMatch(requiredRolesWithPrefix::contains);
 

@@ -119,7 +119,7 @@ public class SysController {
 
         // 转换允许的角色（添加ROLE_前缀，与Security保持一致）
         List<String> allowedRolesWithPrefix = Arrays.stream(allowedRoles)
-                .map(role -> "ROLE_" + role.toUpperCase())
+                .map(role -> "ROLE_" + role)
                 .collect(Collectors.toList());
 
         // 校验角色是否匹配
@@ -466,7 +466,7 @@ public class SysController {
      * 更改用户状态（启用/禁用）- 仅超级管理员可操作
      */
     @GetMapping("/changeUserStatus")
-    @ApiOperation(value = "修改用户状态", notes = "更改用户的启用状态（仅管理员可操作）")
+    @ApiOperation(value = "修改用户状态", notes = "更改用户的启用状态（仅超级管理员可操作）")
     public R changeUserStatus(
             @ApiParam(value = "用户ID", required = true)
             @RequestParam @NotBlank(message = "用户ID不能为空") String uid,

@@ -1,6 +1,5 @@
 package com.zzw.chatserver.filter;
 
-import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.CharUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
@@ -18,8 +17,8 @@ import java.util.Map;
 
 //敏感词过滤类
 @Component
-@Slf4j
 public class SensitiveFilter {
+    private static final Logger logger = LoggerFactory.getLogger(SensitiveFilter.class);
 
     // 替换符
     private static final String REPLACEMENT = "***";
@@ -41,7 +40,7 @@ public class SensitiveFilter {
                 this.addKeyword(keyword);
             }
         } catch (IOException e) {
-            log.error("加载敏感词文件失败: " + e.getMessage());
+            logger.error("加载敏感词文件失败: " + e.getMessage());
         }
     }
 

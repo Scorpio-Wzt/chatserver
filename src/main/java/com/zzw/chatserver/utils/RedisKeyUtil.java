@@ -12,7 +12,7 @@ public class RedisKeyUtil {
     }
 
     // 在线用户集合的key
-    public static String getOnlineUidSetKeys() {
+    public static String getOnlineUidSetKey() {
         return PREFIX_ONLINE_UID_SET;
     }
 

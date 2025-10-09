@@ -122,11 +122,11 @@ public class GroupMessageServiceImpl implements GroupMessageService {
         if (groupHistoryVo == null || StringUtils.isEmpty(groupHistoryVo.getRoomId())) {
             return new GroupHistoryResultVo();
         }
-        // 构建基础查询条件：房间ID匹配
+        // 1. 构建基础查询条件：房间ID匹配
         Criteria cri1 = Criteria.where("roomId").is(groupHistoryVo.getRoomId());
         Criteria cri2 = null;
 
-        // 按查询类型筛选
+        // 2. 按查询类型筛选
         if (!"all".equals(groupHistoryVo.getType())) {
             cri1.and("messageType").is(groupHistoryVo.getType())
                     .and("fileRawName").regex(Pattern.compile("^.*" + groupHistoryVo.getQuery() + ".*$", Pattern.CASE_INSENSITIVE));
@@ -137,7 +137,7 @@ public class GroupMessageServiceImpl implements GroupMessageService {
             );
         }
 
-        // 按日期筛选
+        // 3. 按日期筛选
         if (groupHistoryVo.getDate() != null) {
             try {
                 String dateStr = groupHistoryVo.getDate().trim();
@@ -183,7 +183,7 @@ public class GroupMessageServiceImpl implements GroupMessageService {
 
 
 
-        // 构建最终查询对象
+        // 4. 构建最终查询对象
         Query query = new Query();
         if (cri2 != null) {
             query.addCriteria(new Criteria().andOperator(cri1, cri2));
@@ -191,17 +191,17 @@ public class GroupMessageServiceImpl implements GroupMessageService {
             query.addCriteria(cri1);
         }
 
-        // 统计总条数
+        // 5. 统计总条数
         long count = mongoTemplate.count(query, GroupMessageResultVo.class, "groupmessages");
 
-        // 设置分页参数
+        // 6. 设置分页参数
         query.skip((long) groupHistoryVo.getPageIndex() * groupHistoryVo.getPageSize())
                 .limit(groupHistoryVo.getPageSize());
 
-        // 执行查询
+        // 7. 执行查询
         List<GroupMessageResultVo> messageList = mongoTemplate.find(query, GroupMessageResultVo.class, "groupmessages");
 
-        // 封装结果
+        // 8. 封装结果
         return new GroupHistoryResultVo(messageList, count);
     }
 

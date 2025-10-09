@@ -1,16 +1,21 @@
 package com.zzw.chatserver.filter;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mongodb.client.result.UpdateResult;
 import com.zzw.chatserver.auth.entity.JwtAuthUser;
 import com.zzw.chatserver.common.R;
 import com.zzw.chatserver.common.ResultEnum;
 import com.zzw.chatserver.common.UserStatusEnum;
+import com.zzw.chatserver.pojo.User;
 import com.zzw.chatserver.pojo.vo.LoginRequestVo;
 import com.zzw.chatserver.service.OnlineUserService;
 import com.zzw.chatserver.utils.JwtUtils;
 import com.zzw.chatserver.utils.ResponseUtil;
+import com.zzw.chatserver.utils.SocketIoServerMapUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.types.ObjectId;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -23,6 +28,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
+import javax.annotation.Resource;
 import javax.servlet.FilterChain;
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
@@ -32,11 +38,6 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.concurrent.TimeUnit;
 
-/**
- * JWT登录认证过滤器
- * 职责：处理用户登录请求、验证凭据、生成JWT令牌、更新用户登录状态
- * 新增功能：密码错误三次后15分钟内不允许登录
- */
 @Slf4j
 public class JwtLoginAuthFilter extends UsernamePasswordAuthenticationFilter {
 
@@ -53,16 +54,17 @@ public class JwtLoginAuthFilter extends UsernamePasswordAuthenticationFilter {
     private final MongoTemplate mongoTemplate;
     private final OnlineUserService onlineUserService;
     private final JwtUtils jwtUtils;
-    private final RedisTemplate<String, Object> redisTemplate; // 新增Redis依赖用于计数
+    private final RedisTemplate<String, Object> redisTemplate; // Redis依赖用于计数
 
     // 线程本地存储（传递登录参数，避免request流重复读取）
     private final ThreadLocal<LoginRequestVo> loginRequestHolder = new ThreadLocal<>();
     // 线程本地存储用户名，用于认证失败时获取
     private final ThreadLocal<String> usernameHolder = new ThreadLocal<>();
+    // 在JwtLoginAuthFilter中增加成员变量存储登录参数
+    private final ThreadLocal<LoginRequestVo> loginRequestVoThreadLocal = new ThreadLocal<>();
 
-    /**
-     * 全参数构造器（依赖注入）
-     */
+
+    // 构造器参数：AuthenticationManager + 其他业务依赖
     public JwtLoginAuthFilter(AuthenticationManager authenticationManager,
                               MongoTemplate mongoTemplate,
                               OnlineUserService onlineUserService,
@@ -73,71 +75,60 @@ public class JwtLoginAuthFilter extends UsernamePasswordAuthenticationFilter {
         this.onlineUserService = onlineUserService;
         this.jwtUtils = jwtUtils;
         this.redisTemplate = redisTemplate;
-        // 设置登录请求处理路径
         this.setFilterProcessesUrl(LOGIN_PROCESS_URL);
     }
 
-    /**
-     * 处理登录请求：解析参数并执行认证
-     */
+    //登录验证
     @Override
-    public Authentication attemptAuthentication(HttpServletRequest request,
-                                                HttpServletResponse response) throws AuthenticationException {
+    public Authentication attemptAuthentication(HttpServletRequest request, HttpServletResponse response) throws AuthenticationException {
         try {
             // 解析登录请求参数
-            LoginRequestVo loginVo = new ObjectMapper().readValue(request.getInputStream(), LoginRequestVo.class);
-            log.debug("接收登录请求，用户名: {}", loginVo.getUsername());
+            LoginRequestVo lvo = new ObjectMapper().readValue(request.getInputStream(), LoginRequestVo.class);
+            log.debug("接收登录请求，用户名: {}", lvo.getUsername());
 
             // 验证必要参数
-            if (!isValidLoginParam(loginVo)) {
-                log.warn("登录参数不完整，username: {}", loginVo.getUsername());
+            if (!isValidLoginParam(lvo)) {
+                log.warn("登录参数不完整，username: {}", lvo.getUsername());
                 throw new IllegalArgumentException("用户名或密码不能为空");
             }
 
             // 检查用户是否已被冻结
-            if (isUserAccountLocked(loginVo.getUsername())) {
-                log.warn("用户账号已冻结，拒绝登录，username: {}", loginVo.getUsername());
+            if (isUserAccountLocked(lvo.getUsername())) {
+                log.warn("用户账号已冻结，拒绝登录，username: {}", lvo.getUsername());
                 throw new BadCredentialsException("账号已被冻结，请24小时后再试");
             }
 
             // 存储参数到线程本地，供后续使用
-            loginRequestHolder.set(loginVo);
-            usernameHolder.set(loginVo.getUsername());
+            loginRequestVoThreadLocal.set(lvo); // 存储到 ThreadLocal
+            usernameHolder.set(lvo.getUsername());
 
-            // 执行认证（委托给AuthenticationManager）
             return authenticationManager.authenticate(
-                    new UsernamePasswordAuthenticationToken(
-                            loginVo.getUsername(),
-                            loginVo.getPassword(),
-                            new ArrayList<>()
-                    )
+                    new UsernamePasswordAuthenticationToken(lvo.getUsername(), lvo.getPassword(), new ArrayList<>())
             );
         } catch (IOException e) {
-            log.error("解析登录请求参数失败", e);
-            throw new RuntimeException("登录请求格式错误");
+            logger.error("读取登录参数失败", e);
+            throw new RuntimeException("登录参数解析失败");
         }
     }
 
-    /**
-     * 认证成功处理：生成令牌并返回结果，同时重置错误计数
-     */
+    //登录验证成功后调用，生成Token并返回结果
+    // 修改 JwtLoginAuthFilter 的 successfulAuthentication 方法
     @Override
     protected void successfulAuthentication(HttpServletRequest request,
                                             HttpServletResponse response,
                                             FilterChain chain,
                                             Authentication authResult) throws IOException, ServletException {
         try {
-            // 从线程本地获取登录参数
-            LoginRequestVo loginVo = loginRequestHolder.get();
+            // 读取登录参数（修复 InputStream 重复读取问题，改用 ThreadLocal）
+            LoginRequestVo lvo = loginRequestVoThreadLocal.get(); // 需提前在 attemptAuthentication 中存入
             String username = usernameHolder.get();
 
-            if (loginVo == null || username == null) {
+            if (lvo == null || username == null) {
                 log.error("登录参数丢失，认证失败");
                 ResponseUtil.out(response, R.error().resultEnum(ResultEnum.SYSTEM_ERROR));
                 return;
             }
 
-            // 验证认证结果类型
             if (!(authResult.getPrincipal() instanceof JwtAuthUser)) {
                 log.error("认证结果类型错误，预期JwtAuthUser，实际: {}",
                         authResult.getPrincipal().getClass().getName());
@@ -145,16 +136,22 @@ public class JwtLoginAuthFilter extends UsernamePasswordAuthenticationFilter {
                 return;
             }
 
-            // 获取认证用户信息
+            // 获取认证用户（此时已为 JwtAuthUser 类型）
             JwtAuthUser jwtUser = (JwtAuthUser) authResult.getPrincipal();
-            ObjectId userId = jwtUser.getUserId();
 
-            // 核心校验：用户ID非空
+            if (jwtUser == null) {
+                ResponseUtil.out(response, R.error().resultEnum(ResultEnum.USER_LOGIN_FAILED));
+                return;
+            }
+
+            // 检查 userId 是否为 null（关键防御）
+            ObjectId userId = jwtUser.getUserId();
             if (userId == null) {
                 log.error("用户ID为空，登录失败，username: {}", jwtUser.getUsername());
                 ResponseUtil.out(response, R.error().resultEnum(ResultEnum.USER_LOGIN_FAILED));
                 return;
             }
+
             String uid = userId.toString();
             log.info("用户认证成功，username: {}, uid: {}", jwtUser.getUsername(), uid);
 
@@ -165,7 +162,6 @@ public class JwtLoginAuthFilter extends UsernamePasswordAuthenticationFilter {
                 return;
             }
 
-            // 检查是否已登录
             if (onlineUserService.checkCurUserIsOnline(uid)) {
                 log.warn("用户已在线，拒绝重复登录，uid: {}", uid);
                 ResponseUtil.out(response, R.error().resultEnum(ResultEnum.USER_HAS_LOGGED));
@@ -176,13 +172,21 @@ public class JwtLoginAuthFilter extends UsernamePasswordAuthenticationFilter {
             resetPasswordErrorCount(username);
 
             // 更新用户登录信息
-            updateUserLoginInfo(username, uid, loginVo);
+            updateUserLoginInfo(username, uid, lvo);
 
-            // 生成JWT令牌
-            String token = jwtUtils.createJwt(uid, jwtUser.getUsername());
-            log.debug("生成登录令牌，uid: {}, token: {}", uid, token.substring(0, 10) + "...");
+            // 更新用户信息（使用非 null 的 userId）
+            Query query = new Query();
+            query.addCriteria(new Criteria().orOperator(
+                    Criteria.where("username").is(jwtUser.getUsername()),
+                    Criteria.where("code").is(jwtUser.getUsername())
+            ));
+            Update update = new Update();
+            update.set("lastLoginTime", new Date());
+            update.set("loginSetting", lvo.getSetting());
+            update.set("uid", userId.toString()); // 此处已确保 userId 非 null
 
-            // 返回成功结果
+            // 生成 token（使用非 null 的 userId）
+            String token = jwtUtils.createJwt(userId.toString(), jwtUser.getUsername());
             ResponseUtil.out(response, R.ok()
                     .resultEnum(ResultEnum.LOGIN_SUCCESS)
                     .data("token", token)
@@ -200,7 +204,6 @@ public class JwtLoginAuthFilter extends UsernamePasswordAuthenticationFilter {
             usernameHolder.remove();
         }
     }
-
     /**
      * 认证失败处理：记录错误次数，达到阈值则锁定账户15分钟
      */

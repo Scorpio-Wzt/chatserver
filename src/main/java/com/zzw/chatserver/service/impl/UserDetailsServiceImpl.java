@@ -6,7 +6,6 @@ import com.zzw.chatserver.pojo.SuperUser;
 import com.zzw.chatserver.pojo.User;
 import com.zzw.chatserver.service.SuperUserService;
 import com.zzw.chatserver.service.UserService;
-import lombok.extern.slf4j.Slf4j;
 import org.bson.types.ObjectId;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,8 +26,9 @@ import java.util.List;
  * 作用：将业务层用户信息转换为 Security 认证所需的 UserDetails 对象
  */
 @Service
-@Slf4j
 public class UserDetailsServiceImpl implements UserDetailsService {
+
+    private static final Logger logger = LoggerFactory.getLogger(UserDetailsServiceImpl.class);
 
     // 注入你的业务层 UserService（已包含用户查询逻辑）
     @Autowired
@@ -57,7 +57,7 @@ public class UserDetailsServiceImpl implements UserDetailsService {
         }
 
         // 两种用户都不存在，抛出异常
-        log.error("用户认证失败：用户名/账号[{}]不存在", username);
+        logger.error("用户认证失败：用户名/账号[{}]不存在", username);
         throw new UsernameNotFoundException("用户名或密码错误");
     }
 
@@ -111,12 +111,14 @@ public class UserDetailsServiceImpl implements UserDetailsService {
 
         if (!StringUtils.hasText(roleCode)) {
             roleCode = UserRoleEnum.BUYER.getCode();
-            log.warn("用户角色编码为空，默认分配普通用户权限");
+            logger.warn("用户角色编码为空，默认分配普通用户权限");
         }
 
         switch (roleCode) {
             case "admin":  // 超级管理员（ADMIN）
                 authorities.add(new SimpleGrantedAuthority("ROLE_ADMIN"));
+                // 可选：超级管理员自动拥有客服权限
+                authorities.add(new SimpleGrantedAuthority("ROLE_CUSTOMER_SERVICE"));
                 break;
             case "customer_service":  // 客服（CUSTOMER_SERVICE）
                 authorities.add(new SimpleGrantedAuthority("ROLE_CUSTOMER_SERVICE"));
@@ -125,7 +127,7 @@ public class UserDetailsServiceImpl implements UserDetailsService {
                 authorities.add(new SimpleGrantedAuthority("ROLE_USER"));
                 break;
             default:   // 未知角色默认普通用户
-                log.warn("未知角色编码[{}]，默认分配普通用户权限", roleCode);
+                logger.warn("未知角色编码[{}]，默认分配普通用户权限", roleCode);
                 authorities.add(new SimpleGrantedAuthority("ROLE_USER"));
                 break;
         }

@@ -38,9 +38,9 @@ public interface OnlineUserService {
 
     /**
      * 获取所有在线用户的UID集合
-     * @return 在线用户UID集合（String）
+     * @return 在线用户UID集合（Object类型，需自行强转String）
      */
-    Set<String> getOnlineUidSet();
+    Set<Object> getOnlineUidSet();
 
     /**
      * 根据客户端ID查询绑定的用户信息

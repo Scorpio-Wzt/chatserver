@@ -20,6 +20,33 @@
         <socketio.version>1.7.11</socketio.version>
         <servlet.version>4.0.1</servlet.version>
     </properties>
+    <!-- 添加Maven中央仓库 -->
+    <repositories>
+        <!-- 阿里云仓库（优先使用，速度快） -->
+        <repository>
+            <id>aliyun-central</id>
+            <name>Aliyun Central Repository</name>
+            <url>https://maven.aliyun.com/repository/public</url>
+            <releases>
+                <enabled>true</enabled>
+            </releases>
+            <snapshots>
+                <enabled>false</enabled> <!-- 关闭快照版本下载，避免不稳定 -->
+            </snapshots>
+        </repository>
+        <!-- Maven中央仓库（阿里云没有的版本从这里拉取） -->
+        <repository>
+            <id>maven-central</id>
+            <name>Maven Central Repository</name>
+            <url>https://repo1.maven.org/maven2/</url>
+            <releases>
+                <enabled>true</enabled>
+            </releases>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+        </repository>
+    </repositories>
     <dependencies>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -55,6 +82,21 @@
             <groupId>io.springfox</groupId>
             <artifactId>springfox-swagger-ui</artifactId>
             <version>${swagger.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.mongodb</groupId>
+            <artifactId>bson</artifactId>
+            <version>4.3.4</version> <!-- 核心：Bson 数据结构支持，包含@BsonEnumeration -->
+        </dependency>
+        <dependency>
+            <groupId>org.mongodb</groupId>
+            <artifactId>mongodb-driver-core</artifactId>
+            <version>4.3.4</version> <!-- 核心驱动逻辑 -->
+        </dependency>
+        <dependency>
+            <groupId>org.mongodb</groupId>
+            <artifactId>mongodb-driver-sync</artifactId>
+            <version>4.3.4</version> <!-- 同步驱动，spring-boot-starter-data-mongodb 依赖此组件 -->
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>

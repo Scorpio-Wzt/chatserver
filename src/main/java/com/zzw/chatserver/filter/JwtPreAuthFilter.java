@@ -2,7 +2,6 @@ package com.zzw.chatserver.filter;
 
 import com.zzw.chatserver.utils.JwtUtils;
 import io.jsonwebtoken.Claims;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -27,9 +26,9 @@ import java.util.List;
  * 用于拦截请求并验证JWT Token，将认证信息存入SecurityContext
  */
 @Component
-@Slf4j
 public class JwtPreAuthFilter extends OncePerRequestFilter {
 
+    private static final Logger logger = LoggerFactory.getLogger(JwtPreAuthFilter.class);
     private final JwtUtils jwtUtils;
     private final UserDetailsService userDetailsService;
 
@@ -68,15 +67,15 @@ public class JwtPreAuthFilter extends OncePerRequestFilter {
         try {
             // 从请求头获取Authorization
             String authHeader = request.getHeader(JwtUtils.TOKEN_HEADER);
-            log.debug("获取到的Authorization头：{}", authHeader);
+            logger.debug("获取到的Authorization头：{}", authHeader);
 
             String pureToken = null;
             // 严格校验前缀并剥离
             if (authHeader != null && authHeader.startsWith(JwtUtils.TOKEN_PREFIX) && authHeader.length() > JwtUtils.TOKEN_PREFIX.length()) {
                 pureToken = authHeader.substring(JwtUtils.TOKEN_PREFIX.length()).trim();
-                log.debug("剥离前缀后的纯净Token：{}", pureToken);
+                logger.debug("剥离前缀后的纯净Token：{}", pureToken);
             } else {
-                log.warn("Authorization头格式错误：无Bearer前缀或长度不足，header={}", authHeader);
+                logger.warn("Authorization头格式错误：无Bearer前缀或长度不足，header={}", authHeader);
             }
 
             // 用纯净Token解析
@@ -97,15 +96,15 @@ public class JwtPreAuthFilter extends OncePerRequestFilter {
                     authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
 
                     SecurityContextHolder.getContext().setAuthentication(authentication);
-                    log.info("JWT认证成功，用户ID：{}，用户名：{}", userId, username);
+                    logger.info("JWT认证成功，用户ID：{}，用户名：{}", userId, username);
                 } else {
-                    log.warn("JWT解析失败，Token无效或已过期：{}", pureToken);
+                    logger.warn("JWT解析失败，Token无效或已过期：{}", pureToken);
                 }
             } else {
-                log.debug("请求头中无有效Token，header：{}", authHeader);
+                logger.debug("请求头中无有效Token，header：{}", authHeader);
             }
         } catch (Exception e) {
-            log.error("JWT认证过滤器处理异常", e);
+            logger.error("JWT认证过滤器处理异常", e);
             SecurityContextHolder.clearContext();
         }
 
