@@ -1501,6 +1501,7 @@ import com.zzw.chatserver.filter.SensitiveFilter;
 import com.zzw.chatserver.pojo.*;
 import com.zzw.chatserver.pojo.vo.*;
 import com.zzw.chatserver.service.*;
+import com.zzw.chatserver.utils.ChatServerUtil;
 import com.zzw.chatserver.utils.DateUtil;
 import com.zzw.chatserver.utils.ValidationUtil;
 import lombok.extern.slf4j.Slf4j;
@@ -1513,6 +1514,9 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.util.HtmlUtils;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.Objects;
 
 import javax.annotation.Resource;
 import java.time.Instant;
@@ -2076,6 +2080,25 @@ public class SocketIoListener {
 //                client.sendEvent(EVENT_SEND_FAILED, ERR_IDENTITY_VERIFY_FAILED);
 //                return;
 //            }
+
+            // ========== 消息防篡改校验 ==========
+            String message = newMessageVo.getMessage();
+            String messageType = newMessageVo.getMessageType();
+            String time = newMessageVo.getTime(); // 需与前端时间格式完全一致（如"yyyy-MM-dd HH:mm:ss.SSS"）
+            String frontDigest = newMessageVo.getDigest(); // 前端传来的摘要
+
+            // 拼接字段（顺序必须与前端一致）
+            // String contentToEncrypt = message + messageType + roomId + time;
+            String contentToEncrypt = message + messageType + roomId;
+            String generatedMd5 = ChatServerUtil.generateMD5(contentToEncrypt);
+
+            // 比对摘要
+            if (frontDigest != null && !generatedMd5.equals(frontDigest)) {
+                log.warn("消息篡改检测：生成MD5={}，前端摘要={}，字段拼接内容={}",
+                        generatedMd5, frontDigest, contentToEncrypt);
+                client.sendEvent(EVENT_SEND_FAILED, "消息已被篡改，发送失败");
+                return; // 拒绝篡改的消息
+            }
 
             // 消息安全处理（XSS防御+敏感词过滤）
             processMessageSecurity(newMessageVo);

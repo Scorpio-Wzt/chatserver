@@ -1,22 +1,36 @@
 package com.zzw.chatserver.utils;
 
 import com.zzw.chatserver.common.ConstValueEnum;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.util.DigestUtils;
 
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.Date;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
+@Slf4j
 public class ChatServerUtil {
-    // MD5加密
-    // hello -> abc123def456
-    // hello + 3e4a8 -> abc123def456abc
-    public static String md5(String key) {
-        if (StringUtils.isBlank(key)) {
-            return null;
+    /**
+     * 生成MD5摘要（小写32位）
+     */
+    public static String generateMD5(String input) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("MD5");
+            byte[] messageDigest = md.digest(input.getBytes());
+            StringBuilder hex = new StringBuilder();
+            for (byte b : messageDigest) {
+                String hexStr = Integer.toHexString(0xff & b);
+                if (hexStr.length() == 1) hex.append('0');
+                hex.append(hexStr);
+            }
+            return hex.toString();
+        } catch (NoSuchAlgorithmException e) {
+            log.error("MD5算法初始化失败", e);
+            throw new RuntimeException("消息防篡改校验失败：MD5算法不可用", e);
         }
-        return DigestUtils.md5DigestAsHex(key.getBytes());
     }
 
     // 生成随机字符串

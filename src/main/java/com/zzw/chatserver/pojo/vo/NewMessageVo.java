@@ -26,6 +26,7 @@ public class NewMessageVo {
             // 格式化输出为友好字符串
             .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
     private String fileRawName; //文件的原始名字
+    private String digest; //md5加密字段
     private String message;// 消息内容
     private String messageType;// 消息的类型：emoji/text/img/file/sys
     private List<String> isReadUser; // 判断已经读取的用户，在发送消息时默认发送方已读取
