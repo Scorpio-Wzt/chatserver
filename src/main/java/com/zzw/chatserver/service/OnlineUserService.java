@@ -2,6 +2,7 @@ package com.zzw.chatserver.service;
 
 import com.zzw.chatserver.pojo.vo.SimpleUser;
 
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -13,6 +14,20 @@ import java.util.Set;
  * - 强化Session与用户的绑定关系，支持clientId与userId的双向映射
  */
 public interface OnlineUserService {
+
+    /**
+     * 根据客户端ID查询用户ID
+     * @param clientId
+     * @return
+     */
+    String getUidByClientId(String clientId);
+
+    /**
+     * 获取所有过期的客户端ID
+     * @param expirationMs
+     * @return
+     */
+    List<String> getExpiredClientIds(long expirationMs);
 
     /**
      * 续期客户端和用户的绑定关系过期时间

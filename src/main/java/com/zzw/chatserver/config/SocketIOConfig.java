@@ -89,8 +89,11 @@ import com.corundumstudio.socketio.annotation.SpringAnnotationScanner;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 import java.util.Collections;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ThreadPoolExecutor;
 
 @Configuration
 public class SocketIOConfig {
@@ -118,7 +121,7 @@ public class SocketIOConfig {
     @Value("${socketio.maxHttpContentLength}")
     private int maxHttpContentLength;
 
-    // 动态线程池参数（适配1.7.11版本）
+    // 动态线程池参数
     @Value("${socketio.threadPool.maxConnections:10000}")
     private int maxConnections;
 
@@ -162,6 +165,23 @@ public class SocketIOConfig {
     @Bean
     public SpringAnnotationScanner springAnnotationScanner(SocketIOServer socketServer) {
         return new SpringAnnotationScanner(socketServer);
+    }
+
+    /**
+     * Socket事件异步处理线程池（专门处理连接/断开的非核心流程）
+     */
+    @Bean(name = "socketAsyncExecutor")
+    public Executor socketAsyncExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        int coreCount = Runtime.getRuntime().availableProcessors();
+        executor.setCorePoolSize(coreCount); // 核心线程数=CPU核心数
+        executor.setMaxPoolSize(coreCount * 2); // 最大线程数=CPU核心数*2
+        executor.setQueueCapacity(1000); // 队列容量（缓冲任务）
+        executor.setThreadNamePrefix("socket-async-"); // 线程名前缀（便于排查）
+        // 拒绝策略：任务满时由调用线程执行（避免任务丢失）
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+        executor.initialize();
+        return executor;
     }
 }
 
