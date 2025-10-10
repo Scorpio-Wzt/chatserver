@@ -298,7 +298,7 @@ public class SysController {
             Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
             Object principal = authentication.getPrincipal();
 
-            // 提取用户ID（假设username就是用户ID）
+            // 提取用户ID
             String currentUserId;
             if (principal instanceof User) {
                 // 处理Spring Security默认的User类

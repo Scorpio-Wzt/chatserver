@@ -24,20 +24,20 @@ public class MongoConfig {
             MongoDatabaseFactory databaseFactory,
             MongoMappingContext mappingContext) {
 
-        // 1. 创建默认的类型转换器（处理基本类型映射）
+        // 创建默认的类型转换器（处理基本类型映射）
         DefaultDbRefResolver dbRefResolver = new DefaultDbRefResolver(databaseFactory);
         MappingMongoConverter converter = new MappingMongoConverter(dbRefResolver, mappingContext);
 
-        // 2. 添加自定义枚举转换器（顺序不影响，Spring 会自动匹配类型）
+        // 添加自定义枚举转换器（顺序不影响，Spring 会自动匹配类型）
         List<Converter<?, ?>> customConverters = new ArrayList<>();
         customConverters.add(new OrderStatusToIntegerConverter()); // 枚举 → Integer（存储）
         customConverters.add(new IntegerToOrderStatusConverter()); // Integer → 枚举（读取）
 
-        // 3. 将自定义转换器注册到 MongoDB 转换器中
+        // 将自定义转换器注册到 MongoDB 转换器中
         CustomConversions customConversions = new CustomConversions(customConverters);
         converter.setCustomConversions(customConversions);
 
-        // 4. 初始化转换器（必须调用，否则配置不生效）
+        // 初始化转换器（必须调用，否则配置不生效）
         converter.afterPropertiesSet();
 
         return converter;

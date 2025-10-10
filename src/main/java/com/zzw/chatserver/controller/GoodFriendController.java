@@ -109,7 +109,7 @@ public class GoodFriendController {
             }
 
             // 权限校验：只能查询自己的好友列表
-            String currentUserId = userService.getCurrentUserId(); // 复用UserService中安全的获取方式
+            String currentUserId = userService.getCurrentUserId();
             if (currentUserId == null || !currentUserId.equals(userId)) {
                 return R.error().resultEnum(ResultEnum.PERMISSION_DENIED);
             }

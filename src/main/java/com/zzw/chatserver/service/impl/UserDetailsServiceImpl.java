@@ -30,12 +30,11 @@ public class UserDetailsServiceImpl implements UserDetailsService {
 
     private static final Logger logger = LoggerFactory.getLogger(UserDetailsServiceImpl.class);
 
-    // 注入你的业务层 UserService（已包含用户查询逻辑）
     @Autowired
     private UserService userService;
 
     @Autowired
-    private SuperUserService superUserService; // 注入超级用户服务，用于查询超级用户
+    private SuperUserService superUserService;
     /**
      * 核心方法：根据用户名加载用户信息（Spring Security 自动调用）
      * @param username 登录用户名（与你的 User 实体的 username 字段对应）
@@ -64,7 +63,6 @@ public class UserDetailsServiceImpl implements UserDetailsService {
     /**
      * 通用方法：将普通用户/超级用户转换为 Spring Security 的 UserDetails
      */
-// 修改 UserDetailsServiceImpl.java 的 buildUserDetails 方法
     private UserDetails buildUserDetails(Object user, String username, String password, String roleCode) {
         // 创建自定义 JwtAuthUser 实例（继承自业务 User 实体，包含 userId）
         JwtAuthUser jwtAuthUser = new JwtAuthUser();
@@ -76,7 +74,7 @@ public class UserDetailsServiceImpl implements UserDetailsService {
         // 处理普通用户（复制 userId 等字段）
         if (user instanceof User) {
             User normalUser = (User) user;
-            // 关键：复制 userId（避免 getUserId() 为 null）
+            // 复制 userId（避免 getUserId() 为 null）
             jwtAuthUser.setUserId(normalUser.getUserId());
             // 复制其他必要字段（如 status、role 等）
             jwtAuthUser.setStatus(normalUser.getStatus());

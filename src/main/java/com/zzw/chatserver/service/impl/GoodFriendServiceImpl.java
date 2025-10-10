@@ -185,11 +185,10 @@ public class GoodFriendServiceImpl implements GoodFriendService {
         resList.addAll(convertToFriendResultVo(results1, userId, true));  // 发起方好友
         resList.addAll(convertToFriendResultVo(results2, userId, false)); // 接收方好友
 
-        // 关键：按好友唯一ID去重（假设MyFriendListResultVo中有friendId字段标识好友的唯一ID）
+        // 按好友唯一ID去重
         Set<String> uniqueFriendIds = new HashSet<>();
         List<MyFriendListResultVo> uniqueResList = new ArrayList<>();
         for (MyFriendListResultVo vo : resList) {
-            // 假设好友的唯一标识字段为friendId（根据实际字段名调整）
             String friendId = vo.getId();
             if (friendId != null && uniqueFriendIds.add(friendId)) {
                 // add()返回true表示该好友ID未出现过，保留当前记录

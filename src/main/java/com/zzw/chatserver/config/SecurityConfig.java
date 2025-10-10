@@ -128,7 +128,6 @@ public class SecurityConfig{
         return http.build();
     }
 
-    // 关键：配置角色前缀（解决@PreAuthorize("hasRole('CUSTOMER_SERVICE')")匹配问题）
     @Bean
     public MethodSecurityExpressionHandler methodSecurityExpressionHandler() {
         DefaultMethodSecurityExpressionHandler handler = new DefaultMethodSecurityExpressionHandler();

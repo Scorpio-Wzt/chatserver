@@ -1,8 +1,6 @@
 package com.zzw.chatserver.config;
 
-// 关键：导入 Spring 核心的 Converter 接口
 import org.springframework.core.convert.converter.Converter;
-// 关键：导入 Spring Data 的 ReadingConverter 注解
 import org.springframework.data.convert.ReadingConverter;
 
 import com.zzw.chatserver.pojo.Order;

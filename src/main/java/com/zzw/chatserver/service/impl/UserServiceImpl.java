@@ -922,7 +922,7 @@ public class UserServiceImpl implements UserService {
         try {
             ObjectId sid = new ObjectId(operatorId);
             SuperUser superUser = superUserService.findBySid(sid);
-            // 假设0是超级管理员，1是普通管理员
+            // 0是超级管理员，1是普通管理员
             return superUser != null && (superUser.getRole() == 0 || superUser.getRole() == 1);
         } catch (IllegalArgumentException e) {
             log.warn("操作者ID[{}]格式错误，非有效的ObjectId", operatorId);
