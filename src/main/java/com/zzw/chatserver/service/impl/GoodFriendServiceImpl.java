@@ -359,6 +359,7 @@ public class GoodFriendServiceImpl implements GoodFriendService {
             item.setCreateDate(son.getCreateDate());
             item.setNickname(friendUser.getNickname());
             item.setUsername(friendUser.getUsername());
+            item.setRole(friendUser.getRole());
             item.setPhoto(friendUser.getPhoto());
             item.setSignature(friendUser.getSignature());
             item.setId(friendUser.getUserId().toString());
