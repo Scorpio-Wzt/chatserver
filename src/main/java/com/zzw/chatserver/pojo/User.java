@@ -28,9 +28,9 @@ public class User {
     @Indexed(unique = true)
     private String code; //字段唯一
     private String photo = "/img/picture.png"; //默认头像
-    private String signature = "";
-    private String nickname = "";
-    private String email = "";
+    private String signature;
+    private String nickname;
+    private String email;
     private String phone = "13888888888";
     private String IDcard = "27465820000101853X";
     private Province province = new Province();

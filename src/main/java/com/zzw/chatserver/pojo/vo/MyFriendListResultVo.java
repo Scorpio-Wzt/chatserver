@@ -19,6 +19,7 @@ public class MyFriendListResultVo {
             // 格式化输出为友好字符串
             .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
     private String nickname;
+    private String username;
     private String photo;
     private String signature;
     private String id;

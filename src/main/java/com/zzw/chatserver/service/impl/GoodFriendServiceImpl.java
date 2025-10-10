@@ -351,10 +351,14 @@ public class GoodFriendServiceImpl implements GoodFriendService {
         List<MyFriendListResultVo> resultList = new ArrayList<>();
         for (MyFriendListVo son : sourceList) {
             MyFriendListResultVo item = new MyFriendListResultVo();
+            if (son.getUList() == null || son.getUList().isEmpty()) {
+                continue; // 跳过无效数据
+            }
             User friendUser = son.getUList().get(0);
             // 设置好友基本信息
             item.setCreateDate(son.getCreateDate());
             item.setNickname(friendUser.getNickname());
+            item.setUsername(friendUser.getUsername());
             item.setPhoto(friendUser.getPhoto());
             item.setSignature(friendUser.getSignature());
             item.setId(friendUser.getUserId().toString());
@@ -362,7 +366,11 @@ public class GoodFriendServiceImpl implements GoodFriendService {
             item.setLevel(computedLevel(friendUser.getOnlineTime()));
             // 生成单聊房间ID（按ID字典序排序，避免重复）
             String friendUid = friendUser.getUserId().toString();
-            item.setRoomId(isInitiator ? currentUserId + "-" + friendUid : friendUid + "-" + currentUserId);
+            if (currentUserId.compareTo(friendUid) < 0) {
+                item.setRoomId(currentUserId + "-" + friendUid);
+            } else {
+                item.setRoomId(friendUid + "-" + currentUserId);
+            }
             resultList.add(item);
         }
         return resultList;

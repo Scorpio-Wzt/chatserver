@@ -10,7 +10,7 @@ spring:
       repositories:
         enabled: false
   redis:
-    database: 5
+    database: 0
     host: 127.0.0.1
     port: 6379
     password: 123456
@@ -26,6 +26,9 @@ socketio:
   pingInterval: 25000
   maxHttpContentLength: 1448576
   maxFramePayloadLength: 1448576
+  threadPool:
+    coreMultiplier: 2       # CPU核心数乘数
+    maxConnections: 10000   # 预估最大并发连接数
 server:
   servlet:
     context-path: /chat
