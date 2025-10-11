@@ -64,7 +64,9 @@ public class HttpIpUtils {
                         e.printStackTrace();
                     }
                     assert inet != null;
-                    ip = inet.getHostAddress();
+                    if(inet != null) {
+                        ip = inet.getHostAddress();
+                    }
                 }
             }
             // 对于通过多个代理的情况，第一个IP为客户端真实IP,多个IP按照','分割

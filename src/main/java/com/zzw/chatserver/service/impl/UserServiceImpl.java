@@ -660,7 +660,7 @@ public class UserServiceImpl implements UserService {
             // 4. 敏感字段额外权限校验（可选：仅超级管理员可修改他人敏感信息）
             if (!hasError && sensitiveFields.contains(requestVo.getField())) {
                 // 非本人且非超级管理员，禁止修改敏感字段
-                if (!currentUserId.equals(requestVo.getUserId()) && !isSuperAdmin(currentUserId)) {
+                if (currentUserId != null && !currentUserId.equals(requestVo.getUserId()) && !isSuperAdmin(currentUserId)) {
                     code = ResultEnum.PERMISSION_DENIED.getCode();
                     msg = "仅本人或超级管理员可修改敏感信息";
                     hasError = true;
